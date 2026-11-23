@@ -237,6 +237,7 @@ def _selftest() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    common.configure_console()
     ap = argparse.ArgumentParser(prog="severity_scorer.py",
                                  description="CVSS v3.1 scoring + ranking for Setu findings")
     ap.add_argument("file", nargs="?", help="JSON array of findings")

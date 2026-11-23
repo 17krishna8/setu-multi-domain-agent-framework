@@ -244,9 +244,12 @@ def render_finding(f: dict, index: int) -> str:
 
 def to_markdown(findings: list[dict], title: str = "Security Assessment",
                 scope: str | None = None, author: str = "Setu Cyber") -> str:
-    confirmed = [f for f in findings
+    note_types = {"testing-note", "coverage-note"}
+    notes = [f for f in findings if f.get("type") in note_types]
+    security_findings = [f for f in findings if f.get("type") not in note_types]
+    confirmed = [f for f in security_findings
                  if not f.get("needs_manual_review") and float(f.get("confidence") or 0) >= 0.45]
-    unverified = [f for f in findings if f not in confirmed]
+    unverified = [f for f in security_findings if f not in confirmed]
 
     counts: dict[str, int] = {}
     for f in confirmed:
@@ -298,6 +301,14 @@ def to_markdown(findings: list[dict], title: str = "Security Assessment",
                        f"— _{reason}_")
         out.append("")
 
+    if notes:
+        out += ["## Coverage notes (not security findings)", "",
+                "These notes identify checks that were incomplete or informational; they "
+                "must not be interpreted as evidence that the target is secure or insecure.", ""]
+        for f in notes:
+            out.append(f"- {common.truncate(str(f.get('finding','')), 200)}")
+        out.append("")
+
     out += ["---", "",
             "_Findings were produced under authorized testing. Every item should be "
             "independently confirmed before submission to any bug-bounty program. "
@@ -306,6 +317,7 @@ def to_markdown(findings: list[dict], title: str = "Security Assessment",
 
 
 def main(argv: list[str] | None = None) -> int:
+    common.configure_console()
     ap = argparse.ArgumentParser(prog="report_formatter.py")
     ap.add_argument("file", help="ranked findings JSON")
     ap.add_argument("--title", default="Security Assessment")

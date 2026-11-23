@@ -76,6 +76,7 @@ def inject_params(url: str, probes: dict | None = None,
             specialist="cyber-injection", target=url, ftype="testing-note")]
 
     findings: list[dict] = []
+    request_failures: list[dict] = []
     for pname in query:
         for kind, payloads in (probes or INJECTION_PROBES).items():
             for payload in payloads:
@@ -86,6 +87,7 @@ def inject_params(url: str, probes: dict | None = None,
                 r = cr.http_get(test_url, timeout=8, authorized=authorized,
                                 allow_private=allow_private)
                 if not r.get("status"):
+                    request_failures.append({"url": test_url, "error": r.get("error")})
                     continue
                 body = r["body"]
                 verdict = pattern_engine.match_category(body, CATEGORY_FOR_KIND[kind])
@@ -125,6 +127,14 @@ def inject_params(url: str, probes: dict | None = None,
                     # evidence (and so it survives dedup merging)
                     outcome_confirmed=verdict.outcome_confirmed))
                 break   # one confirmed payload per kind/param is enough signal
+    if request_failures:
+        findings.append(common.finding(
+            finding=f"Injection testing incomplete: {len(request_failures)} probe request(s) did not complete.",
+            severity="info", confidence=1.0,
+            evidence={"failed_requests": request_failures[:10],
+                      "failure_count": len(request_failures),
+                      "result": "incomplete; no negative security conclusion"},
+            specialist="cyber-coverage", target=url, ftype="coverage-note"))
     return findings
 
 
@@ -291,7 +301,12 @@ def payload_corpus(technique: str) -> dict:
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+def _configure_console() -> None:
+    common.configure_console()
+
+
 def _emit(findings: list[dict], as_json: bool, out_path: str | None) -> None:
+    _configure_console()
     normalized = common.normalize_findings(findings)
     payload = json.dumps(normalized, indent=2, ensure_ascii=False)
     if out_path:
@@ -306,6 +321,7 @@ def _emit(findings: list[dict], as_json: bool, out_path: str | None) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_console()
     ap = argparse.ArgumentParser(
         prog="cyber_scan.py",
         description="Setu Cyber recon + vulnerability specialists (authorized testing only)")
@@ -331,6 +347,7 @@ def main(argv: list[str] | None = None) -> int:
         if a.subcommand == "selftest":
             return cr._selftest()
         if a.subcommand == "payloads":
+            _configure_console()
             print(json.dumps(payload_corpus(a.target or "xss"), indent=2))
             return 0
         if a.subcommand == "deps":

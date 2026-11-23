@@ -150,6 +150,7 @@ def stats(before: list[dict], after: list[dict]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    common.configure_console()
     ap = argparse.ArgumentParser(prog="dedup.py")
     ap.add_argument("file")
     ap.add_argument("--out")

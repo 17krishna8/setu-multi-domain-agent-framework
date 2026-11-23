@@ -166,6 +166,7 @@ def run_chain(target: str, *, authorized: bool = False, passive: bool = False,
 
 
 def main(argv: list[str] | None = None) -> int:
+    common.configure_console()
     ap = argparse.ArgumentParser(prog="cyber_chain.py",
                                  description="Setu Cyber end-to-end chain")
     ap.add_argument("--target", required=True, help="URL or bare domain")

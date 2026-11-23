@@ -188,9 +188,15 @@ def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
             parts = urllib.parse.urlsplit(cur)
             port = parts.port or (443 if parts.scheme == "https" else 80)
         except ValueError as e:
-            raise ScopeError(f"refusing invalid redirect URL: {cur}: {e}") from e
+            if hops:
+                return {"status": 0, "headers": {}, "body": "", "url": cur,
+                        "error": f"invalid redirect URL: {e}", "chain": hops + [cur]}
+            raise ScopeError(f"refusing invalid target URL: {cur}: {e}") from e
         host = (parts.hostname or "").rstrip(".").lower()
         if parts.scheme not in {"http", "https"} or not host or parts.username or parts.password:
+            if hops:
+                return {"status": 0, "headers": {}, "body": "", "url": cur,
+                        "error": "invalid or unsupported redirect URL", "chain": hops + [cur]}
             raise ScopeError(f"refusing invalid or unsupported target URL: {cur}")
         if initial.scheme == "https" and parts.scheme != "https":
             return {"status": 0, "headers": {}, "body": "", "url": cur,
@@ -228,7 +234,11 @@ def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
                     return {"status": 0, "headers": {}, "body": "", "url": cur,
                             "error": "too many redirects", "chain": hops}
                 hops.append(cur)
-                cur = urllib.parse.urljoin(cur, location)
+                try:
+                    cur = urllib.parse.urljoin(cur, location)
+                except (TypeError, ValueError) as e:
+                    return {"status": 0, "headers": {}, "body": "", "url": cur,
+                            "error": f"invalid redirect Location: {e}", "chain": hops}
                 continue
             body = e.read(200_000).decode("utf-8", errors="replace")
             return {"status": e.code, "headers": headers, "body": body,
@@ -401,6 +411,15 @@ INTERESTING_PATHS = {
 }
 
 
+def _request_coverage_note(stage: str, url: str, error: str | None) -> dict:
+    return common.finding(
+        finding=f"{stage} was not fully tested because the request did not complete.",
+        severity="info", confidence=1.0,
+        evidence={"url": url, "error": error or "request returned no status",
+                  "result": "incomplete; no negative security conclusion"},
+        specialist="cyber-coverage", target=url, ftype="coverage-note")
+
+
 def endpoint_discovery(url: str, paths: list[str] | None = None,
                        allow_private: bool = False, timeout: float = 6.0,
                        authorized: bool = False) -> list[dict]:
@@ -414,11 +433,16 @@ def endpoint_discovery(url: str, paths: list[str] | None = None,
     baseline = http_get(base + "/setu-nonexistent-" + os.urandom(4).hex(), timeout=timeout,
                         authorized=authorized, allow_private=allow_private)
     base_status, base_len = baseline.get("status", 404), len(baseline.get("body", ""))
+    if not base_status:
+        out.append(_request_coverage_note("Endpoint discovery baseline", base,
+                                          baseline.get("error")))
 
     for p in (paths or PATH_PROBES):
         r = http_get(base + p, timeout=timeout, authorized=authorized,
                      allow_private=allow_private)
         if not r.get("status"):
+            out.append(_request_coverage_note(f"Endpoint probe {p}", base + p,
+                                              r.get("error")))
             continue
         if (r["status"] == 200 and base_status == 200
                 and abs(len(r["body"]) - base_len) < 16):
@@ -437,36 +461,76 @@ def endpoint_discovery(url: str, paths: list[str] | None = None,
     return out
 
 
+def _query_txt_records(name: str) -> list[str] | None:
+    """Query TXT records using common system tools; None means unavailable/failed."""
+    import shutil
+    import subprocess
+
+    if shutil.which("dig"):
+        try:
+            result = subprocess.run(["dig", "+noall", "+comments", "+answer", "TXT", name],
+                                    capture_output=True, text=True, timeout=6, check=False)
+            status = re.search(r"status:\s*(\w+)", result.stdout, re.I)
+            if result.returncode == 0 and status:
+                rcode = status.group(1).upper()
+                if rcode in {"NOERROR", "NXDOMAIN"}:
+                    records = []
+                    for line in result.stdout.splitlines():
+                        if re.search(r"\sIN\s+TXT\s", line, re.I):
+                            chunks = re.findall(r'"([^"]*)"', line)
+                            if chunks:
+                                records.append("".join(chunks))
+                    # NOERROR with no TXT answer (NODATA) and NXDOMAIN are both
+                    # definitive absence for this name/type. Other rcodes are unknown.
+                    return records
+                return None
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    if shutil.which("nslookup"):
+        try:
+            result = subprocess.run(["nslookup", "-type=TXT", name], capture_output=True,
+                                    text=True, timeout=6, check=False)
+            output = result.stdout + "\n" + result.stderr
+            if re.search(r"non-existent domain|NXDOMAIN", output, re.I):
+                return []
+            if re.search(r"timed out|no response|server failure|SERVFAIL|REFUSED", output, re.I):
+                return None
+            if result.returncode == 0:
+                quoted = re.findall(r'"([^"]*)"', output)
+                if quoted:
+                    return quoted
+                if re.search(r"no answer|no records?", output, re.I):
+                    return []
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return None
+
+
 def osint(domain: str) -> list[dict]:
     """Passive OSINT: mail posture + CT hostnames. Sends nothing to the target."""
     out: list[dict] = []
-    spf = ""
-    try:
-        import shutil
-        import subprocess
-        if shutil.which("dig"):
-            spf = subprocess.run(["dig", "+short", "TXT", domain], capture_output=True,
-                                 text=True, timeout=6).stdout
-    except Exception:  # noqa: BLE001
-        spf = ""
-    if "v=spf1" not in spf:
-        out.append(common.finding(
-            finding=f"No SPF record observed for {domain} — sender forgery is easier.",
-            severity="low", confidence=0.5,
-            evidence={"domain": domain, "spf_raw": spf[:300],
-                      "caveat": "Absence detected via a short dig; re-verify before reporting."},
-            specialist="cyber-osint", target=domain, ftype="email-spoofing"))
-    try:
-        socket.getaddrinfo(f"_dmarc.{domain}", None)
-        dmarc_found = True
-    except socket.gaierror:
-        dmarc_found = False
-    if not dmarc_found:
-        out.append(common.finding(
-            finding=f"No DMARC record observed for {domain}.",
-            severity="low", confidence=0.5,
-            evidence={"domain": domain, "checked": f"_dmarc.{domain}"},
-            specialist="cyber-osint", target=domain, ftype="email-spoofing"))
+    checks = (("SPF", domain, "v=spf1"),
+              ("DMARC", f"_dmarc.{domain}", "v=DMARC1"))
+    for label, name, marker in checks:
+        records = _query_txt_records(name)
+        matching = [record for record in records or []
+                    if record.lstrip().lower().startswith(marker.lower())]
+        if records is None:
+            out.append(common.finding(
+                finding=f"{label} TXT record could not be checked for {domain}.",
+                severity="info", confidence=1.0,
+                evidence={"domain": domain, "checked": name,
+                          "reason": "no supported TXT lookup tool or DNS query failed",
+                          "result": "unknown; no absence claim made"},
+                specialist="cyber-osint", target=name, ftype="coverage-note"))
+        elif not matching:
+            out.append(common.finding(
+                finding=f"No {label} record observed for {domain}.",
+                severity="low", confidence=0.5,
+                evidence={"domain": domain, "checked": name, "txt_records": records[:10],
+                          "caveat": "TXT lookup found no matching record; verify before reporting."},
+                specialist="cyber-osint", target=name, ftype="email-spoofing"))
     hosts = ct_subdomains(domain)
     if hosts:
         out.append(common.finding(
@@ -496,7 +560,7 @@ def header_check(url: str, allow_private: bool = False,
     assert_public(urllib.parse.urlsplit(url).hostname or "", allow_private)
     r = http_get(url, authorized=authorized, allow_private=allow_private)
     if not r.get("status"):
-        return []
+        return [_request_coverage_note("Security-header check", url, r.get("error"))]
     hdrs = {k.lower(): v for k, v in r["headers"].items()}
     out: list[dict] = []
     for name, (sev, desc) in SECURITY_HEADERS.items():
