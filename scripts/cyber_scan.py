@@ -46,7 +46,7 @@ INJECTION_PROBES = {
     "ssti": ["{{7*7}}", "${7*7}"],
 }
 
-CATEGORY_FOR_KIND = {"sqli": "sqli", "traversal": "traversal", "ssti": "ssti", "xss": "sqli"}
+CATEGORY_FOR_KIND = {"sqli": "sqli", "traversal": "traversal", "ssti": "ssti", "xss": "xss"}
 # Display labels. Emitting "SQLI" and fixing it later in the formatter means the
 # acronym is wrong in every intermediate artifact too, so it is fixed at the source.
 KIND_LABEL = {"sqli": "SQLi", "xss": "XSS", "traversal": "path traversal",

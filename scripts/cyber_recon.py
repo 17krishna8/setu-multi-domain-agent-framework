@@ -38,8 +38,12 @@ import common  # noqa: E402
 UA = "Setu-Cyber/0.1 (+authorized-testing; contact the operator)"
 PRIVATE_NETS = [
     ipaddress.ip_network(n) for n in (
-        "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
-        "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10", "0.0.0.0/8",
+        "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+        "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.168.0.0/16",
+        "198.18.0.0/15", "224.0.0.0/4", "240.0.0.0/4",
+        "::/128", "::1/128", "::ffff:0:0/96", "64:ff9b::/96",
+        "100::/64", "2001::/23", "2001:db8::/32", "2002::/16",
+        "fc00::/7", "fe80::/10", "ff00::/8",
     )
 ]
 
@@ -69,17 +73,35 @@ def resolve_host(host: str) -> list[str]:
 
 
 def is_private(addr: str) -> bool:
+    """Return true for non-global addresses, including mapped/transition IPv6."""
     try:
-        ip = ipaddress.ip_address(addr)
+        ip = ipaddress.ip_address(addr.strip("[]"))
     except ValueError:
         return False
-    return any(ip in net for net in PRIVATE_NETS)
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped:
+            return is_private(str(ip.ipv4_mapped))
+        if ip.sixtofour:
+            return is_private(str(ip.sixtofour))
+        if ip.teredo:
+            server, client = ip.teredo
+            return is_private(str(server)) or is_private(str(client))
+    return not ip.is_global or any(ip in net for net in PRIVATE_NETS)
 
 
 def assert_public(host: str, allow_private: bool = False) -> None:
-    if allow_private or not host:
+    if not host:
+        raise ScopeError("refusing target without a hostname")
+    literal = host.strip("[]")
+    try:
+        ipaddress.ip_address(literal)
+    except ValueError:
+        addresses = resolve_host(host)
+    else:
+        addresses = [literal]
+    if allow_private:
         return
-    for addr in resolve_host(host):
+    for addr in addresses:
         if is_private(addr):
             raise ScopeError(
                 f"'{host}' resolves to non-public address {addr}. Refusing to fetch.\n"
@@ -100,12 +122,29 @@ def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
     assert_authorized(authorized, passive=False)
     hops: list[str] = []
     cur = url
+    try:
+        initial = urllib.parse.urlsplit(url)
+        initial_port = initial.port or (443 if initial.scheme == "https" else 80)
+    except ValueError as e:
+        raise ScopeError(f"refusing invalid target URL: {url}: {e}") from e
+    initial_host = (initial.hostname or "").rstrip(".").lower()
+    if initial.scheme not in {"http", "https"} or not initial_host or \
+            initial.username or initial.password:
+        raise ScopeError(f"refusing invalid or unsupported target URL: {url}")
     for _ in range(max_redirects + 1):
-        parts = urllib.parse.urlsplit(cur)
-        host = parts.hostname or ""
+        try:
+            parts = urllib.parse.urlsplit(cur)
+            port = parts.port or (443 if parts.scheme == "https" else 80)
+        except ValueError as e:
+            raise ScopeError(f"refusing invalid redirect URL: {cur}: {e}") from e
+        host = (parts.hostname or "").rstrip(".").lower()
         if parts.scheme not in {"http", "https"} or not host or parts.username or parts.password:
             raise ScopeError(f"refusing invalid or unsupported target URL: {cur}")
         assert_public(host, allow_private)
+        if initial.scheme == "https" and parts.scheme != "https":
+            raise ScopeError(f"refusing HTTPS downgrade redirect: {cur}")
+        if host != initial_host or port != initial_port:
+            raise ScopeError(f"refusing redirect outside the authorized origin: {cur}")
         req = urllib.request.Request(cur, headers={"user-agent": UA, "accept": "*/*"})
         t0 = time.perf_counter()
         try:

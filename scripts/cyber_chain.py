@@ -44,6 +44,9 @@ def _stage(name: str, fn, *a, **kw):
     print(f"\n=== {name} ===", file=sys.stderr)
     try:
         return fn(*a, **kw), None
+    except cr.ScopeError:
+        # Scope refusal is a hard stop, never a recoverable stage failure.
+        raise
     except Exception as e:  # noqa: BLE001 — one stage failing must not kill the chain
         print(f"  stage '{name}' failed: {e}", file=sys.stderr)
         return [], str(e)

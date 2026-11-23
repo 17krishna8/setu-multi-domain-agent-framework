@@ -49,6 +49,25 @@
         }
       ]
     },
+    "xss": {
+      "class": "injection",
+      "rules": [
+        {
+          "id": "xss-reflected-markup",
+          "label": "HTML markup reflected in response",
+          "regex": "(?i)<(?:script|svg|img|iframe|math|video|audio)\\b|javascript:",
+          "weight": 0.45,
+          "confirms_outcome": false
+        },
+        {
+          "id": "xss-executable-event-handler",
+          "label": "Executable event-handler markup reflected",
+          "regex": "(?i)<[^>]+\\bon(?:load|error|click|mouseover|focus)\\s*=",
+          "weight": 0.8,
+          "confirms_outcome": true
+        }
+      ]
+    },
     "command": {
       "class": "injection",
       "rules": [

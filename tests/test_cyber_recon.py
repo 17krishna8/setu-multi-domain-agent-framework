@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import cyber_recon as cr  # noqa: E402
 import cyber_scan  # noqa: E402
+import pattern_engine  # noqa: E402
 
 
 def test_http_get_refuses_active_request_without_authorization(monkeypatch):
@@ -69,6 +70,46 @@ def test_http_get_checks_private_redirect_before_opening_it(monkeypatch):
     assert opened == ["https://public.example/start"]
 
 
+def test_http_get_refuses_redirect_to_another_public_origin(monkeypatch):
+    opened = []
+
+    class CrossOriginRedirect:
+        def open(self, request, timeout):
+            opened.append(request.full_url)
+            raise urllib.error.HTTPError(
+                request.full_url, 302, "Found", {"Location": "https://attacker.example/collect"},
+                io.BytesIO(b""),
+            )
+
+    monkeypatch.setattr(cr, "resolve_host", lambda host: ["93.184.216.34"])
+    monkeypatch.setattr(cr.urllib.request, "build_opener", lambda *handlers: CrossOriginRedirect())
+
+    with pytest.raises(cr.ScopeError, match="outside the authorized origin"):
+        cr.http_get("https://public.example/start", authorized=True, allow_private=True)
+
+    assert opened == ["https://public.example/start"]
+
+
+def test_http_get_refuses_https_downgrade(monkeypatch):
+    opened = []
+
+    class DowngradeRedirect:
+        def open(self, request, timeout):
+            opened.append(request.full_url)
+            raise urllib.error.HTTPError(
+                request.full_url, 302, "Found", {"Location": "http://public.example/next"},
+                io.BytesIO(b""),
+            )
+
+    monkeypatch.setattr(cr, "resolve_host", lambda host: ["93.184.216.34"])
+    monkeypatch.setattr(cr.urllib.request, "build_opener", lambda *handlers: DowngradeRedirect())
+
+    with pytest.raises(cr.ScopeError, match="HTTPS downgrade"):
+        cr.http_get("https://public.example/start", authorized=True)
+
+    assert opened == ["https://public.example/start"]
+
+
 def test_http_get_follows_authorized_public_redirect(monkeypatch):
     opened = []
 
@@ -93,6 +134,37 @@ def test_http_get_follows_authorized_public_redirect(monkeypatch):
 
     assert opened == ["https://public.example/start", "https://public.example/next"]
     assert result["chain"] == ["https://public.example/start"]
+
+
+@pytest.mark.parametrize("address", [
+    "::", "::ffff:127.0.0.1", "::ffff:169.254.169.254", "100.64.0.1",
+    "ff02::1", "240.0.0.1", "198.18.0.1", "192.0.0.1",
+])
+def test_non_global_ip_addresses_are_not_public(address):
+    assert cr.is_private(address)
+
+
+def test_assert_public_checks_ip_literals_without_dns():
+    with pytest.raises(cr.ScopeError, match="non-public"):
+        cr.assert_public("[::ffff:169.254.169.254]")
+
+
+def test_http_get_rejects_metadata_literal_even_if_dns_is_unavailable(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("non-global IP literal must be rejected before opening a connection")
+
+    monkeypatch.setattr(cr.urllib.request, "build_opener", unexpected)
+    with pytest.raises(cr.ScopeError, match="non-public"):
+        cr.http_get("http://[::]/", authorized=True)
+
+
+def test_xss_detection_uses_dedicated_patterns():
+    reflected = pattern_engine.match_category("<img src=x>", "xss")
+    executed = pattern_engine.match_category('<img src=x onerror="alert(1)">', "xss")
+
+    assert reflected.matches
+    assert not reflected.outcome_confirmed
+    assert executed.outcome_confirmed
 
 
 def test_http_get_rejects_unsupported_or_credentialed_urls_before_open(monkeypatch):

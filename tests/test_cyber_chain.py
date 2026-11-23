@@ -59,3 +59,15 @@ def test_active_helpers_are_called_with_authorization_in_chain(tmp_path, monkeyp
         "fingerprint", "endpoints", "headers", "injection"
     }
     assert all(kwargs.get("authorized") is True for _, _, kwargs in observed)
+
+
+def test_chain_does_not_swallow_scope_refusals(tmp_path, monkeypatch):
+    monkeypatch.setattr(cr, "tech_fingerprint",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(
+                            cr.ScopeError("scope refused")))
+
+    with pytest.raises(cr.ScopeError, match="scope refused"):
+        cyber_chain.run_chain(
+            "https://example.com/item?id=1", authorized=True,
+            out_dir=str(tmp_path), log_memory=False,
+        )
