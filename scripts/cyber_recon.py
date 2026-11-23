@@ -87,26 +87,49 @@ def assert_public(host: str, allow_private: bool = False) -> None:
             )
 
 
-def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3) -> dict:
-    """GET -> {status, headers, body, url, elapsed_ms, error?}. Never raises on 4xx/5xx."""
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Return redirects to the caller so every destination can be revalidated."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
+             authorized: bool = False, allow_private: bool = False) -> dict:
+    """Safely GET an authorized target; validate authorization and every redirect."""
+    assert_authorized(authorized, passive=False)
     hops: list[str] = []
     cur = url
     for _ in range(max_redirects + 1):
-        host = urllib.parse.urlsplit(cur).hostname or ""
-        if not host:
-            raise ScopeError(f"no host in url: {cur}")
+        parts = urllib.parse.urlsplit(cur)
+        host = parts.hostname or ""
+        if parts.scheme not in {"http", "https"} or not host or parts.username or parts.password:
+            raise ScopeError(f"refusing invalid or unsupported target URL: {cur}")
+        assert_public(host, allow_private)
         req = urllib.request.Request(cur, headers={"user-agent": UA, "accept": "*/*"})
         t0 = time.perf_counter()
         try:
-            ctx = ssl.create_default_context() if cur.startswith("https") else None
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+            handlers = [_NoRedirectHandler()]
+            if parts.scheme == "https":
+                handlers.append(urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+            opener = urllib.request.build_opener(*handlers)
+            with opener.open(req, timeout=timeout) as r:
                 body = r.read(400_000).decode("utf-8", errors="replace")
                 return {"status": r.status, "headers": dict(r.headers), "body": body,
                         "url": cur, "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
                         "chain": hops}
         except urllib.error.HTTPError as e:
+            headers = dict(e.headers or {})
+            location = headers.get("Location") or headers.get("location")
+            if e.code in {301, 302, 303, 307, 308} and location:
+                if len(hops) >= max_redirects:
+                    return {"status": 0, "headers": {}, "body": "", "url": cur,
+                            "error": "too many redirects", "chain": hops}
+                hops.append(cur)
+                cur = urllib.parse.urljoin(cur, location)
+                continue
             body = e.read(200_000).decode("utf-8", errors="replace")
-            return {"status": e.code, "headers": dict(e.headers or {}), "body": body,
+            return {"status": e.code, "headers": headers, "body": body,
                     "url": cur, "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
                     "chain": hops}
         except (urllib.error.URLError, TimeoutError, ssl.SSLError, ConnectionError) as e:
@@ -129,12 +152,14 @@ COMMON_SUBS = [
 
 def subdomain_enum(domain: str, wordlist: list[str] | None = None,
                    passive: bool = True, allow_private: bool = False,
-                   timeout: float = 2.0) -> list[dict]:
+                   timeout: float = 2.0, authorized: bool = False) -> list[dict]:
     """DNS-first enumeration. Passive mode never opens an HTTP connection.
 
     This is the cheap 80% of coverage. Pair it with ``ct_subdomains`` (crt.sh)
     and a real resolver for production use; the orchestrator does both.
     """
+    if not passive:
+        assert_authorized(authorized, passive=False)
     domain = domain.strip().lower().lstrip(".")
     out: list[dict] = []
     seen: set[str] = set()
@@ -161,7 +186,8 @@ def subdomain_enum(domain: str, wordlist: list[str] | None = None,
             return
         ev = {"host": host, "addresses": addrs}
         if not passive:
-            r = http_get(f"https://{host}/", timeout=timeout)
+            r = http_get(f"https://{host}/", timeout=timeout,
+                         authorized=authorized, allow_private=allow_private)
             if r.get("status"):
                 ev["http_status"] = r["status"]
                 ev["server"] = r["headers"].get("Server")
@@ -220,9 +246,11 @@ TECH_SIGNATURES = [
 ]
 
 
-def tech_fingerprint(url: str, allow_private: bool = False) -> list[dict]:
+def tech_fingerprint(url: str, allow_private: bool = False,
+                     authorized: bool = False) -> list[dict]:
+    assert_authorized(authorized, passive=False)
     assert_public(urllib.parse.urlsplit(url).hostname or "", allow_private)
-    r = http_get(url)
+    r = http_get(url, authorized=authorized, allow_private=allow_private)
     if not r.get("status"):
         return [common.finding(
             finding=f"Target unreachable: {r.get('error')}", severity="info", confidence=0.9,
@@ -265,18 +293,22 @@ INTERESTING_PATHS = {
 
 
 def endpoint_discovery(url: str, paths: list[str] | None = None,
-                       allow_private: bool = False, timeout: float = 6.0) -> list[dict]:
+                       allow_private: bool = False, timeout: float = 6.0,
+                       authorized: bool = False) -> list[dict]:
+    assert_authorized(authorized, passive=False)
     parts = urllib.parse.urlsplit(url)
     assert_public(parts.hostname or "", allow_private)
     base = f"{parts.scheme}://{parts.netloc}"
     out: list[dict] = []
 
     # Soft-404 suppression: measure the baseline noise before trusting a 200.
-    baseline = http_get(base + "/setu-nonexistent-" + os.urandom(4).hex(), timeout=timeout)
+    baseline = http_get(base + "/setu-nonexistent-" + os.urandom(4).hex(), timeout=timeout,
+                        authorized=authorized, allow_private=allow_private)
     base_status, base_len = baseline.get("status", 404), len(baseline.get("body", ""))
 
     for p in (paths or PATH_PROBES):
-        r = http_get(base + p, timeout=timeout)
+        r = http_get(base + p, timeout=timeout, authorized=authorized,
+                     allow_private=allow_private)
         if not r.get("status"):
             continue
         if (r["status"] == 200 and base_status == 200
@@ -349,9 +381,11 @@ SECURITY_HEADERS = {
 }
 
 
-def header_check(url: str, allow_private: bool = False) -> list[dict]:
+def header_check(url: str, allow_private: bool = False,
+                 authorized: bool = False) -> list[dict]:
+    assert_authorized(authorized, passive=False)
     assert_public(urllib.parse.urlsplit(url).hostname or "", allow_private)
-    r = http_get(url)
+    r = http_get(url, authorized=authorized, allow_private=allow_private)
     if not r.get("status"):
         return []
     hdrs = {k.lower(): v for k, v in r["headers"].items()}

@@ -61,10 +61,13 @@ def run_chain(target: str, *, authorized: bool = False, passive: bool = False,
 
     # ---- 1. recon -----------------------------------------------------------
     cr.assert_authorized(authorized, passive=passive)
-    if not is_url:
+    if not is_url or passive:
+        # Passive URL requests are reduced to DNS/CT/email-posture checks; never
+        # fingerprint, probe paths, or send injection payloads to the target.
         cr.assert_public(host or "", allow_private)
         got, err = _stage("recon: subdomain-enum", cr.subdomain_enum,
-                          host, None, passive, allow_private)
+                          host, None, passive, allow_private,
+                          authorized=authorized)
         findings += got
         if err:
             errors["subdomain-enum"] = err
@@ -74,25 +77,26 @@ def run_chain(target: str, *, authorized: bool = False, passive: bool = False,
             errors["osint"] = err
     else:
         cr.assert_public(host or "", allow_private)
-        got, err = _stage("recon: fingerprint", cr.tech_fingerprint, target, allow_private)
+        got, err = _stage("recon: fingerprint", cr.tech_fingerprint, target,
+                          allow_private=allow_private, authorized=authorized)
         findings += got
         if err:
             errors["fingerprint"] = err
         got, err = _stage("recon: endpoints", cr.endpoint_discovery, target,
-                          None, allow_private)
+                          allow_private=allow_private, authorized=authorized)
         findings += got
         if err:
             errors["endpoints"] = err
         got, err = _stage("specialist: cloud-misconfig (headers)", cr.header_check,
-                          target, allow_private)
+                          target, allow_private=allow_private, authorized=authorized)
         findings += got
         if err:
             errors["header-check"] = err
 
     # ---- 2. specialist: injection (only if authorized and a parameter exists) --
-    if is_url and (authorized or passive):
+    if is_url and authorized and not passive:
         got, err = _stage("specialist: injection", cyber_scan.inject_params,
-                          target, None, allow_private)
+                          target, allow_private=allow_private, authorized=authorized)
         findings += got
         if err:
             errors["injection"] = err
