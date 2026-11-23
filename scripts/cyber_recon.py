@@ -19,6 +19,7 @@ Every function returns findings in the pack's single shape:
 """
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import os
@@ -43,6 +44,7 @@ PRIVATE_NETS = [
         "198.18.0.0/15", "224.0.0.0/4", "240.0.0.0/4",
         "::/128", "::1/128", "::ffff:0:0/96", "64:ff9b::/96",
         "100::/64", "2001::/23", "2001:db8::/32", "2002::/16",
+        "64:ff9b:1::/48", "::/96", "fec0::/10",
         "fc00::/7", "fe80::/10", "ff00::/8",
     )
 ]
@@ -89,7 +91,8 @@ def is_private(addr: str) -> bool:
     return not ip.is_global or any(ip in net for net in PRIVATE_NETS)
 
 
-def assert_public(host: str, allow_private: bool = False) -> None:
+def assert_public(host: str, allow_private: bool = False) -> list[str]:
+    """Resolve once, enforce address policy, and return IPs to pin at connect time."""
     if not host:
         raise ScopeError("refusing target without a hostname")
     literal = host.strip("[]")
@@ -99,14 +102,62 @@ def assert_public(host: str, allow_private: bool = False) -> None:
         addresses = resolve_host(host)
     else:
         addresses = [literal]
-    if allow_private:
-        return
-    for addr in addresses:
-        if is_private(addr):
-            raise ScopeError(
-                f"'{host}' resolves to non-public address {addr}. Refusing to fetch.\n"
-                "If this is an intentional lab target, pass --allow-private."
-            )
+    if not addresses:
+        raise ScopeError(f"cannot resolve host '{host}': no addresses returned")
+    if not allow_private:
+        for addr in addresses:
+            if is_private(addr):
+                raise ScopeError(
+                    f"'{host}' resolves to non-public address {addr}. Refusing to fetch.\n"
+                    "If this is an intentional lab target, pass --allow-private."
+                )
+    return addresses
+
+
+def _pinned_handlers(addresses: list[str]):
+    """Build direct HTTP handlers that connect only to previously checked IPs."""
+    class PinnedHTTPConnection(http.client.HTTPConnection):
+        def connect(self):
+            errors = []
+            for address in addresses:
+                try:
+                    self.sock = socket.create_connection(
+                        (address, self.port), self.timeout, self.source_address)
+                    break
+                except OSError as e:
+                    errors.append(e)
+            else:
+                raise errors[-1]
+            if self._tunnel_host:
+                self._tunnel()
+
+    class PinnedHTTPSConnection(http.client.HTTPSConnection):
+        def connect(self):
+            errors = []
+            for address in addresses:
+                try:
+                    self.sock = socket.create_connection(
+                        (address, self.port), self.timeout, self.source_address)
+                    break
+                except OSError as e:
+                    errors.append(e)
+            else:
+                raise errors[-1]
+            if self._tunnel_host:
+                self._tunnel()
+            server_hostname = self._tunnel_host or self.host
+            self.sock = self._context.wrap_socket(self.sock, server_hostname=server_hostname)
+
+    class PinnedHTTPHandler(urllib.request.HTTPHandler):
+        def http_open(self, req):
+            return self.do_open(PinnedHTTPConnection, req)
+
+    class PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req):
+            return self.do_open(PinnedHTTPSConnection, req,
+                                context=self._context, check_hostname=self._check_hostname)
+
+    return PinnedHTTPHandler(), PinnedHTTPSHandler(context=ssl.create_default_context())
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -131,6 +182,7 @@ def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
     if initial.scheme not in {"http", "https"} or not initial_host or \
             initial.username or initial.password:
         raise ScopeError(f"refusing invalid or unsupported target URL: {url}")
+    pinned_addresses = assert_public(initial_host, allow_private)
     for _ in range(max_redirects + 1):
         try:
             parts = urllib.parse.urlsplit(cur)
@@ -140,17 +192,26 @@ def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
         host = (parts.hostname or "").rstrip(".").lower()
         if parts.scheme not in {"http", "https"} or not host or parts.username or parts.password:
             raise ScopeError(f"refusing invalid or unsupported target URL: {cur}")
-        assert_public(host, allow_private)
         if initial.scheme == "https" and parts.scheme != "https":
-            raise ScopeError(f"refusing HTTPS downgrade redirect: {cur}")
-        if host != initial_host or port != initial_port:
-            raise ScopeError(f"refusing redirect outside the authorized origin: {cur}")
-        req = urllib.request.Request(cur, headers={"user-agent": UA, "accept": "*/*"})
+            return {"status": 0, "headers": {}, "body": "", "url": cur,
+                    "error": "HTTPS downgrade redirect refused", "chain": hops + [cur]}
+        upgrade = (initial.scheme == "http" and parts.scheme == "https"
+                   and initial_port == 80 and port == 443)
+        if host != initial_host or (port != initial_port and not upgrade):
+            # Refuse without resolving attacker-controlled redirect hosts.
+            return {"status": 0, "headers": {}, "body": "", "url": cur,
+                    "error": "redirect outside the authorized origin", "chain": hops + [cur]}
+        try:
+            req = urllib.request.Request(cur, headers={"user-agent": UA, "accept": "*/*"})
+        except (TypeError, ValueError) as e:
+            if hops:
+                return {"status": 0, "headers": {}, "body": "", "url": cur,
+                        "error": f"invalid redirect URL: {e}", "chain": hops + [cur]}
+            raise ScopeError(f"refusing invalid target URL: {e}") from e
         t0 = time.perf_counter()
         try:
-            handlers = [_NoRedirectHandler()]
-            if parts.scheme == "https":
-                handlers.append(urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+            handlers = [urllib.request.ProxyHandler({}), _NoRedirectHandler(),
+                        *_pinned_handlers(pinned_addresses)]
             opener = urllib.request.build_opener(*handlers)
             with opener.open(req, timeout=timeout) as r:
                 body = r.read(400_000).decode("utf-8", errors="replace")
@@ -158,8 +219,10 @@ def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
                         "url": cur, "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
                         "chain": hops}
         except urllib.error.HTTPError as e:
+            # HTTP header lookup is case-insensitive on the original message;
+            # converting it to a plain dict first loses that guarantee.
+            location = e.headers.get("Location") if e.headers else None
             headers = dict(e.headers or {})
-            location = headers.get("Location") or headers.get("location")
             if e.code in {301, 302, 303, 307, 308} and location:
                 if len(hops) >= max_redirects:
                     return {"status": 0, "headers": {}, "body": "", "url": cur,
@@ -174,6 +237,11 @@ def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
         except (urllib.error.URLError, TimeoutError, ssl.SSLError, ConnectionError) as e:
             return {"status": 0, "headers": {}, "body": "", "url": cur,
                     "error": str(e), "chain": hops}
+        except (http.client.InvalidURL, ValueError) as e:
+            if hops:
+                return {"status": 0, "headers": {}, "body": "", "url": cur,
+                        "error": f"invalid redirect URL: {e}", "chain": hops + [cur]}
+            raise ScopeError(f"refusing invalid target URL: {e}") from e
     return {"status": 0, "headers": {}, "body": "", "url": url, "error": "too many redirects",
             "chain": hops}
 
@@ -247,6 +315,7 @@ def ct_subdomains(domain: str, timeout: float = 12.0) -> list[str]:
     Fails *loudly*: if crt.sh is down you get a warning and an empty list,
     never a silent empty list that a report would read as "no subdomains exist".
     """
+    domain = domain.strip().lower().rstrip(".")
     url = f"https://crt.sh/?q=%25.{urllib.parse.quote(domain)}&output=json"
     req = urllib.request.Request(url, headers={"user-agent": UA})
     try:
@@ -259,8 +328,9 @@ def ct_subdomains(domain: str, timeout: float = 12.0) -> list[str]:
     for row in rows if isinstance(rows, list) else []:
         for name in str(row.get("name_value", "")).splitlines():
             name = name.strip().lower().lstrip("*.")
-            if name.endswith(domain) and name != domain:
-                hosts.add(name)
+            if name == domain or name.endswith("." + domain):
+                if name != domain:
+                    hosts.add(name)
     return sorted(hosts)
 
 
@@ -459,11 +529,12 @@ def header_check(url: str, allow_private: bool = False,
             finding="CORS reflects a 'null' origin — sandboxed-iframe bypass.",
             severity="medium", confidence=0.7, evidence={"acao": acao},
             specialist="cyber-cloud-misconfig", target=url, ftype="cors", cwe="CWE-942"))
-    if url.startswith("http://"):
+    if (r.get("url") or url).startswith("http://"):
         out.append(common.finding(
             finding="Target served over plaintext HTTP with no redirect to HTTPS.",
             severity="medium", confidence=0.9,
-            evidence={"url": url, "status": r["status"]},
+            evidence={"url": r.get("url") or url, "redirect_chain": r.get("chain", []),
+                      "status": r["status"]},
             specialist="cyber-cloud-misconfig", target=url, ftype="transport", cwe="CWE-319"))
     return out
 

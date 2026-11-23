@@ -56,7 +56,7 @@
           "id": "xss-reflected-markup",
           "label": "HTML markup reflected in response",
           "regex": "(?i)<(?:script|svg|img|iframe|math|video|audio)\\b|javascript:",
-          "weight": 0.45,
+          "weight": 0.55,
           "confirms_outcome": false
         },
         {
@@ -64,7 +64,7 @@
           "label": "Executable event-handler markup reflected",
           "regex": "(?i)<[^>]+\\bon(?:load|error|click|mouseover|focus)\\s*=",
           "weight": 0.8,
-          "confirms_outcome": true
+          "confirms_outcome": false
         }
       ]
     },
