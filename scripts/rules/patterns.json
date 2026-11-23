@@ -1,0 +1,225 @@
+{
+  "version": 2,
+  "description": "Shared detection patterns. Consumed by cyber-injection AND finance-scam-check, so a pattern added here improves both packs. Each rule: id, label, regex, weight (signal strength 0-1), notes.",
+  "categories": {
+    "sqli": {
+      "class": "injection",
+      "rules": [
+        {
+          "id": "sqli-error-mysql",
+          "label": "MySQL error signature",
+          "regex": "(?i)you have an error in your sql syntax|warning: mysqli?_|check the manual that corresponds to your (mysql|maria)",
+          "weight": 0.85,
+          "confirms_outcome": true
+        },
+        {
+          "id": "sqli-error-pg",
+          "label": "PostgreSQL error signature",
+          "regex": "(?i)pg_query\\(\\)|unterminated quoted string at or near|invalid input syntax for (integer|type)",
+          "weight": 0.85,
+          "confirms_outcome": true
+        },
+        {
+          "id": "sqli-error-mssql",
+          "label": "MSSQL error signature",
+          "regex": "(?i)unclosed quotation mark after the character string|microsoft ole db provider for sql server|incorrect syntax near",
+          "weight": 0.85,
+          "confirms_outcome": true
+        },
+        {
+          "id": "sqli-error-oracle",
+          "label": "Oracle error signature",
+          "regex": "(?i)ora-0(1[0-9]{3}|9[0-9]{3})|quoted string not properly terminated",
+          "weight": 0.85,
+          "confirms_outcome": true
+        },
+        {
+          "id": "sqli-union-probe",
+          "label": "UNION SELECT probe in parameter",
+          "regex": "(?i)(union\\s+(all\\s+)?select|order\\s+by\\s+\\d+--|'\\s*or\\s+'?1'?\\s*=\\s*'?1)",
+          "weight": 0.6,
+          "confirms_outcome": false
+        },
+        {
+          "id": "sqli-time-based",
+          "label": "Time-based blind payload",
+          "regex": "(?i)(sleep\\(\\s*\\d+\\s*\\)|benchmark\\(\\s*\\d+|pg_sleep\\(|waitfor\\s+delay)",
+          "weight": 0.7,
+          "confirms_outcome": true
+        }
+      ]
+    },
+    "command": {
+      "class": "injection",
+      "rules": [
+        {
+          "id": "cmdi-shell-meta",
+          "label": "Shell metacharacter in parameter",
+          "regex": "(;|\\|\\||&&|`|\\$\\()\\s*(cat|id|whoami|uname|curl|wget|nc|ping|ls|dir)\\b",
+          "weight": 0.7,
+          "confirms_outcome": false
+        },
+        {
+          "id": "cmdi-outcome",
+          "label": "Command output leaked in response",
+          "regex": "(?i)(?m)^uid=\\d+\\([^)]+\\)|^root:x:0:0:|total\\s+\\d+\\s+drwx",
+          "weight": 0.8,
+          "confirms_outcome": true
+        }
+      ]
+    },
+    "traversal": {
+      "class": "injection",
+      "rules": [
+        {
+          "id": "path-traversal-payload",
+          "label": "Directory traversal sequence",
+          "regex": "(?:\\.\\./|\\.\\.\\\\|%2e%2e%2f|%252e%252e)",
+          "weight": 0.6,
+          "confirms_outcome": false
+        },
+        {
+          "id": "path-traversal-outcome",
+          "label": "Passwd-file style content in response",
+          "regex": "(?i)root:[x*]:0:0:|\\[boot loader\\]|\\[extensions\\]",
+          "weight": 0.85,
+          "confirms_outcome": true
+        }
+      ]
+    },
+    "ssti": {
+      "class": "injection",
+      "rules": [
+        {
+          "id": "ssti-payload",
+          "label": "Template expression injected",
+          "regex": "(\\{\\{.*?\\}\\}|\\$\\{.*?\\}|<%=.*?%>)",
+          "weight": 0.45,
+          "confirms_outcome": false
+        },
+        {
+          "id": "ssti-outcome",
+          "label": "Evaluated arithmetic echo (e.g. 49 returned for 7*7)",
+          "regex": "(?<![\\d])49(?![\\d])",
+          "weight": 0.3,
+          "confirms_outcome": true
+        }
+      ]
+    },
+    "scam": {
+      "class": "fraud",
+      "rules": [
+        {
+          "id": "scam-urgency",
+          "label": "Manufactured urgency",
+          "regex": "(?i)\\b(within\\s+\\d+\\s*(minutes?|hours?)|immediately|last\\s+warning|final\\s+notice|account\\s+will\\s+be\\s+(blocked|suspended|closed)|expires?\\s+today)\\b",
+          "weight": 0.5,
+          "confirms_outcome": true
+        },
+        {
+          "id": "scam-authority",
+          "label": "False authority impersonation",
+          "regex": "(?i)\\b(rbi|income\\s+tax\\s+department|cyber\\s+crime\\s+cell|cbi|police|trai|customs|epfo|uidai|bank\\s+of\\s+india|sbi|hdfc|icici)\\b.{0,60}\\b(notice|case|fir|compliance|verification|department)\\b",
+          "weight": 0.6,
+          "confirms_outcome": true
+        },
+        {
+          "id": "scam-credential-harvest",
+          "label": "Asks for credentials/OTP/PIN/CVV",
+          "regex": "(?i)\\b(share|send|provide|confirm|verify)\\b.{0,40}\\b(otp|one[- ]time\\s+password|cvv|pin|password|aadhaar|pan\\s+card|net\\s*banking\\s+(id|login))\\b",
+          "weight": 0.8,
+          "confirms_outcome": true
+        },
+        {
+          "id": "scam-kyc-lure",
+          "label": "KYC / account-suspension lure",
+          "regex": "(?i)\\b(kyc\\s+(update|pending|expired|complete)|re-?kyc|pan[- ]aadhaar\\s+link|account\\s+(frozen|deactivated))\\b",
+          "weight": 0.7,
+          "confirms_outcome": true
+        },
+        {
+          "id": "scam-payment-lure",
+          "label": "Advance-fee / refund / prize bait",
+          "regex": "(?i)\\b(processing\\s+fee|registration\\s+charge|refund\\s+of|you\\s+have\\s+won|lucky\\s+(draw|winner)|lottery|cashback\\s+of|rewards?\\s+points\\s+expiring)\\b",
+          "weight": 0.7,
+          "confirms_outcome": true
+        },
+        {
+          "id": "scam-job-lure",
+          "label": "Task/part-time job fraud patterning",
+          "regex": "(?i)\\b(part[- ]?time\\s+(job|work)|daily\\s+(income|earning)|earn\\s+\\d+[k,]?\\s*(per|/)\\s*day|work\\s+from\\s+home.{0,40}(pay|deposit)|telegram\\s+(group|channel))\\b",
+          "weight": 0.6,
+          "confirms_outcome": true
+        },
+        {
+          "id": "scam-link-shortener",
+          "label": "Obfuscated or lookalike link",
+          "regex": "(?i)(bit\\.ly|tinyurl|t\\.co|is\\.gd|rb\\.gy|cut\\\\.ly|\\b[a-z0-9-]+\\.(top|xyz|click|link|info|online|site|shop)/(?!/))",
+          "weight": 0.5,
+          "confirms_outcome": true
+        },
+        {
+          "id": "scam-upi-collect",
+          "label": "UPI collect-request / reverse QR trick",
+          "regex": "(?i)\\b(upi\\s+(collect|request)|scan\\s+(this\\s+)?qr.{0,40}(receive|accept)|enter\\s+upi\\s+pin.{0,30}receive)\\b",
+          "weight": 0.85,
+          "confirms_outcome": true
+        },
+        {
+          "id": "scam-grammar",
+          "label": "Template grammar tells (typos in official vocabulary)",
+          "regex": "(?i)\\b(verifiation|verfication|acount|acccount|debited\\s+twice|kindly\\s+do\\s+the\\s+needful|revert\\s+back|do\\s+not\\s+share\\s+with\\s+anyone)\\b",
+          "weight": 0.35,
+          "confirms_outcome": true
+        }
+      ]
+    },
+    "secrets": {
+      "class": "crypto",
+      "rules": [
+        {
+          "id": "secret-aws-key",
+          "label": "AWS access key id in source",
+          "regex": "AKIA[0-9A-Z]{16}",
+          "weight": 0.95,
+          "confirms_outcome": true
+        },
+        {
+          "id": "secret-private-key",
+          "label": "PEM private key inline",
+          "regex": "(?i)-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----",
+          "weight": 0.95,
+          "confirms_outcome": true
+        },
+        {
+          "id": "secret-gcp",
+          "label": "GCP service-account JSON marker",
+          "regex": "\"type\"\\s*:\\s*\"service_account\"",
+          "weight": 0.9,
+          "confirms_outcome": true
+        },
+        {
+          "id": "secret-generic-assign",
+          "label": "Hardcoded credential assignment",
+          "regex": "(?i)(api[_-]?key|secret|token|passwd|password)\\s*[:=]\\s*['\"][A-Za-z0-9_\\-]{12,}['\"]",
+          "weight": 0.6,
+          "confirms_outcome": true
+        },
+        {
+          "id": "crypto-weak-hash",
+          "label": "Weak hash used for passwords",
+          "regex": "(?i)(md5|sha1)\\s*\\(\\s*(password|passwd|pwd)",
+          "weight": 0.75,
+          "confirms_outcome": true
+        },
+        {
+          "id": "crypto-insecure-random",
+          "label": "Non-CSPRNG for token generation",
+          "regex": "(?i)(Math\\.random\\(\\)|random\\.random\\(\\)|new\\s+Random\\(\\))",
+          "weight": 0.5,
+          "confirms_outcome": true
+        }
+      ]
+    }
+  }
+}

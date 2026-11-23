@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "note": "SMALL, HAND-CHECKED SUBSET for offline verification. This is NOT a legal database and it is NOT current — Indian statutes are amended frequently. The verifier distinguishes 'not in my corpus' from 'does not exist' precisely because this list is small. Always confirm against the official gazette / indiacode.nic.in text before filing.",
+  "jurisdiction": "India (central statutes)",
+  "acts": {
+    "rti-2005": {
+      "short_name": "Right to Information Act, 2005",
+      "aliases": ["RTI Act", "Right to Information Act", "RTI Act 2005"],
+      "source": "https://www.indiacode.nic.in/handle/123456789/2079",
+      "sections": {
+        "6(1)": {
+          "heading": "Request for obtaining information",
+          "text": "A person, who desires to obtain any information under this Act, shall make a request in writing or through electronic means in English or Hindi or in the official language of the area in which the application is being made, accompanying such fee as may be prescribed, to the Central Public Information Officer or State Public Information Officer, as the case may be, of the concerned public authority, specifying the particulars of the information sought by him or her.",
+          "source": "RTI Act 2005, s.6(1)"
+        },
+        "6(3)": {
+          "heading": "Transfer of application",
+          "text": "Where an application made under this Act has been received by a public authority and the information sought relates to another public authority, the public authority receiving the application shall transfer it to that other public authority within five days from the date of receipt of the application.",
+          "source": "RTI Act 2005, s.6(3)",
+          "caveat": "Paraphrase-level fidelity in this corpus entry; confirm exact wording in the official text before quoting it."
+        },
+        "7(1)": {
+          "heading": "Time limit for disposal",
+          "text": "Subject to the proviso to sub-section (2) of section 5 or the proviso to sub-section (3) of section 6, the Central Public Information Officer or State Public Information Officer, as the case may be, shall, as expeditiously as possible, and in any case within thirty days of the receipt of the request, either provide the information on payment of such fee as may be prescribed or reject the request for any of the reasons specified in sections 8 and 9.",
+          "source": "RTI Act 2005, s.7(1)"
+        },
+        "8(1)": {
+          "heading": "Exemption from disclosure",
+          "text": "Notwithstanding anything contained in this Act, there shall be no obligation to give any citizen information which would prejudicially affect the sovereignty and integrity of India, the security, strategic, scientific or economic interests of the State, relation with foreign State or lead to incitement of an offence.",
+          "source": "RTI Act 2005, s.8(1)"
+        },
+        "8(1)(j)": {
+          "heading": "Personal information exemption",
+          "text": "information which relates to personal information the disclosure of which has no relationship to any public activity or interest, or which would cause unwarranted invasion of the privacy of the individual unless the Central Public Information Officer or the State Public Information Officer or the appellate authority, as the case may be, is satisfied that the larger public interest justifies the disclosure of such information.",
+          "source": "RTI Act 2005, s.8(1)(j)"
+        },
+        "19(1)": {
+          "heading": "First appeal",
+          "text": "Any person who, does not receive a decision within the time specified in sub-section (1) or clause (a) of sub-section (3) of section 7, or is aggrieved by a decision of the Central Public Information Officer or State Public Information Officer, as the case may be, may within thirty days from the expiry of such period or from the receipt of such a decision prefer an appeal to such officer who is senior in rank to the Central Public Information Officer or State Public Information Officer, as the case may be, in each public authority.",
+          "source": "RTI Act 2005, s.19(1)"
+        }
+      },
+      "known_max_section": 31
+    },
+    "consumer-2019": {
+      "short_name": "Consumer Protection Act, 2019",
+      "aliases": ["Consumer Protection Act", "CPA 2019"],
+      "source": "https://www.indiacode.nic.in/handle/123456789/15256",
+      "sections": {
+        "2(11)": {
+          "heading": "Deficiency",
+          "text": "deficiency means any fault, imperfection, shortcoming or inadequacy in the quality, nature and manner of performance which is required to be maintained by or under any law for the time being in force or has been undertaken to be performed by a person in pursuance of a contract or otherwise in relation to any service.",
+          "source": "Consumer Protection Act 2019, s.2(11)"
+        },
+        "2(47)": {
+          "heading": "Unfair trade practice",
+          "text": "unfair trade practice means a trade practice which, for the purpose of promoting the sale, use or supply of any goods or for the provision of any service, adopts any unfair method or unfair or deceptive practice.",
+          "source": "Consumer Protection Act 2019, s.2(47)"
+        },
+        "35": {
+          "heading": "Complaint before District Commission",
+          "text": "A complaint relating to any goods or services may be filed with the District Commission by a complainant.",
+          "source": "Consumer Protection Act 2019, s.35",
+          "caveat": "Summarised in this corpus. Quote the official text, not this entry."
+        }
+      },
+      "known_max_section": 107
+    },
+    "constitution-in": {
+      "short_name": "Constitution of India",
+      "aliases": ["the Constitution", "Constitution"],
+      "source": "https://www.indiacode.nic.in/handle/123456789/15240",
+      "sections": {
+        "14": {
+          "heading": "Equality before law",
+          "text": "The State shall not deny to any person equality before the law or the equal protection of the laws within the territory of India.",
+          "source": "Constitution of India, Article 14"
+        },
+        "19(1)(a)": {
+          "heading": "Freedom of speech and expression",
+          "text": "All citizens shall have the right to freedom of speech and expression.",
+          "source": "Constitution of India, Article 19(1)(a)"
+        },
+        "21": {
+          "heading": "Protection of life and personal liberty",
+          "text": "No person shall be deprived of his life or personal liberty except according to procedure established by law.",
+          "source": "Constitution of India, Article 21"
+        }
+      },
+      "known_max_section": 395
+    }
+  }
+}

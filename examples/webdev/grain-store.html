@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Grain &amp; Store — a fortnightly grain co-op ledger for Mennonite and Hutterite farm families in southern Manitoba</title>
+<!--
+  BUILDER NOTE (one line, as required):
+  Palette: unbleached kraft (#e8e2d4) and scorched-crust brown (#3d2b1f) because the
+  subject is a grain co-op in a wheat town, not a SaaS product. Type: Fraunces for
+  numbers and headings (a serif with grain in it) against Public Sans for the ledger —
+  the serif does the talking, the sans does the bookkeeping. Layout: a two-column
+  ledger with a persistent left rail, because a co-op's users are reconciling
+  quantities, not being sold to; there is no hero and no card grid.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --kraft: #e8e2d4;        /* unbleached paper */
+    --kraft-deep: #d9d0bd;
+    --crust: #3d2b1f;        /* scorched crust */
+    --crust-soft: #5b4433;
+    --stubble: #a89a7c;      /* field stubble after harvest */
+    --sack-red: #8c3a24;     /* twine and tally marks */
+    --rule: #c4b8a0;
+    --display: "Fraunces", serif;
+    --body: "Public Sans", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--kraft); color: var(--crust); }
+  body { font-family: var(--body); font-size: 16px; line-height: 1.55;
+         -webkit-font-smoothing: antialiased; }
+
+  /* The single structural idea: a rail that stays put while the ledger scrolls.
+     Grid, not flex, so the rail and the ledger share one baseline. */
+  .shell { display: grid; grid-template-columns: 17rem minmax(0, 1fr);
+           min-height: 100vh; max-width: 74rem; margin: 0 auto; }
+
+  .rail { border-right: 1px solid var(--rule); padding: 2.5rem 1.75rem;
+          position: sticky; top: 0; align-self: start; height: 100vh; }
+  .mark { display: flex; align-items: baseline; gap: .5rem; }
+  .mark svg { flex: none; }
+  .mark strong { font-family: var(--display); font-size: 1.15rem; letter-spacing: -.01em; }
+  .rail nav { margin-top: 2.5rem; display: grid; gap: .15rem; }
+  .rail nav a { color: var(--crust-soft); text-decoration: none; font-size: .875rem;
+                padding: .4rem .5rem; border-radius: 2px; display: flex;
+                justify-content: space-between; }
+  .rail nav a[aria-current] { background: var(--crust); color: var(--kraft); }
+  .rail nav a span { font-variant-numeric: tabular-nums; opacity: .6; }
+  .rail .stamp { margin-top: 2.5rem; font-size: .75rem; color: var(--stubble);
+                 letter-spacing: .04em; text-transform: uppercase; }
+
+  main { padding: 2.5rem 3rem 6rem; }
+  .lede { display: grid; grid-template-columns: minmax(0,1fr) 13rem; gap: 2rem;
+          align-items: end; border-bottom: 1px solid var(--rule); padding-bottom: 1.5rem; }
+  h1 { font-family: var(--display); font-size: clamp(1.9rem, 3.4vw, 2.9rem);
+       line-height: 1.08; letter-spacing: -.015em; margin: 0 0 .6rem; font-weight: 600; }
+  .lede p { margin: 0; max-width: 34rem; color: var(--crust-soft); }
+  .weather { border-left: 1px solid var(--rule); padding-left: 1rem; }
+  .weather dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
+                color: var(--stubble); }
+  .weather dd { margin: 0 0 .6rem; font-family: var(--display); font-size: 1.05rem;
+                font-variant-numeric: tabular-nums; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 2rem;
+          font-variant-numeric: tabular-nums; }
+  caption { text-align: left; font-size: .75rem; text-transform: uppercase;
+            letter-spacing: .08em; color: var(--stubble); padding-bottom: .5rem; }
+  th { text-align: left; font-weight: 600; font-size: .75rem; letter-spacing: .06em;
+       text-transform: uppercase; color: var(--crust-soft);
+       border-bottom: 1px solid var(--crust); padding: .5rem .75rem .5rem 0; }
+  td { padding: .7rem .75rem .7rem 0; border-bottom: 1px solid var(--rule); }
+  td.num, th.num { text-align: right; padding-right: 0; }
+  tr.out td { color: var(--stubble); }
+  .margin-note { border-left: 2px solid var(--sack-red); padding: .1rem 0 .1rem .9rem;
+                 margin: 2.5rem 0; font-size: .9rem; color: var(--crust-soft);
+                 max-width: 33rem; }
+  .margin-note b { color: var(--sack-red); font-weight: 600; }
+  footer { margin-top: 4rem; border-top: 1px solid var(--rule); padding-top: 1rem;
+           font-size: .8rem; color: var(--stubble); display: flex;
+           justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail { position: static; height: auto; border-right: 0;
+            border-bottom: 1px solid var(--rule); }
+    .lede { grid-template-columns: 1fr; }
+    .weather { border-left: 0; padding-left: 0; display: flex; gap: 2rem; }
+    main { padding: 1.75rem 1.25rem 4rem; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="rail">
+    <div class="mark">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M10 1.5v17M2 6.5l8 4 8-4" stroke="#8c3a24" stroke-width="1.5"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <strong>Grain &amp; Store</strong>
+    </div>
+    <nav aria-label="Ledger sections">
+      <a href="#delivery" aria-current="page">Delivery ledger <span>12</span></a>
+      <a href="#pooling">Pooling <span>4</span></a>
+      <a href="#storage">Storage <span>3</span></a>
+      <a href="#settlement">Settlement <span>1</span></a>
+    </nav>
+    <p class="stamp">Cycle 24 · fortnightly<br>Rosthern, SK</p>
+  </aside>
+
+  <main>
+    <section class="lede" id="delivery">
+      <div>
+        <h1>Fourteen loads in, the pool is short 2.4 tonnes of what the elevator weighed.</h1>
+        <p>The difference is moisture, not theft — but it is still a difference, and
+        every member is owed the same explanation before settlement on the 28th.</p>
+      </div>
+      <dl class="weather">
+        <dt>Moisture, dock</dt><dd>13.8%</dd>
+        <dt>Pool shortfall</dt><dd>2.4 t</dd>
+        <dt>Per member</dt><dd>171 kg</dd>
+      </dl>
+    </section>
+
+    <table id="pooling">
+      <caption>Delivery ledger — cycle 24, all members</caption>
+      <thead>
+        <tr>
+          <th scope="col">Member</th>
+          <th scope="col">Loads</th>
+          <th scope="col" class="num">Weighed (t)</th>
+          <th scope="col" class="num">Docked (t)</th>
+          <th scope="col" class="num">Settled (t)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>H. Dueck</td><td>3</td><td class="num">31.20</td><td class="num">0.41</td><td class="num">30.79</td></tr>
+        <tr><td>J. Knelsen</td><td>2</td><td class="num">20.84</td><td class="num">0.27</td><td class="num">20.57</td></tr>
+        <tr><td>P. Reimer</td><td>4</td><td class="num">41.06</td><td class="num">0.54</td><td class="num">40.52</td></tr>
+        <tr><td>A. Wiens</td><td>2</td><td class="num">19.71</td><td class="num">0.26</td><td class="num">19.45</td></tr>
+        <tr class="out"><td>L. Fast</td><td>1</td><td class="num">10.12</td><td class="num">—</td><td class="num">withheld</td></tr>
+        <tr class="out"><td>M. Peters</td><td>2</td><td class="num">18.33</td><td class="num">—</td><td class="num">withheld</td></tr>
+        <tr><td><strong>Pool</strong></td><td><strong>14</strong></td><td class="num"><strong>141.26</strong></td><td class="num"><strong>1.48</strong></td><td class="num"><strong>139.78</strong></td></tr>
+      </tbody>
+    </table>
+
+    <p class="margin-note">
+      <b>Two loads are withheld.</b> L. Fast and M. Peters delivered before the moisture
+      meter was recalibrated on the 9th. Their grain is in the bin; the weight is not
+      in the pool. Settling them on the old calibration would cost them 0.38 t between
+      them, so the board has held both until the elevator reissues the tickets.
+    </p>
+
+    <table id="storage">
+      <caption>Bin space — allocated against next cycle</caption>
+      <thead>
+        <tr><th scope="col">Bin</th><th scope="col">Grade</th>
+        <th scope="col" class="num">Held (t)</th><th scope="col" class="num">Capacity (t)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Bin 1</td><td>No. 1 CWRS</td><td class="num">62.40</td><td class="num">80.00</td></tr>
+        <tr><td>Bin 2</td><td>No. 2 CWRS</td><td class="num">48.10</td><td class="num">80.00</td></tr>
+        <tr><td>Bin 3</td><td>Feed</td><td class="num">29.28</td><td class="num">60.00</td></tr>
+      </tbody>
+    </table>
+
+    <p class="margin-note" id="settlement">
+      <b>Settlement is the 28th, not the 21st.</b> The elevator moved the reconciliation
+      date to accommodate the recalibration. Nothing in this ledger is final until the
+      board signs the ticket on the 28th — printed copies are provisional and are
+      stamped provisional for that reason.
+    </p>
+
+    <footer>
+      <span>Grain &amp; Store Co-operative · Cycle 24 · provisional until the 28th</span>
+      <span>Meter recalibrated 9 Nov · tickets reissued pending</span>
+    </footer>
+  </main>
+</div>
+</body>
+</html>
