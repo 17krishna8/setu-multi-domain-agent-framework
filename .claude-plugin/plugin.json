@@ -1,33 +1,12 @@
 {
   "name": "setu",
   "version": "0.1.0",
-  "description": "Setu (सेतु, 'bridge') — a multi-domain agentic framework: cyber security research, web development, agriculture, admin/legal documents, and personal finance, on a shared local memory + model-agnostic wrapper.",
-  "author": {
-    "name": "Setu Contributors"
-  },
+  "description": "Setu (सेतु, 'bridge') — a multi-domain agentic framework: cyber security research, web development, agriculture, admin/legal documents, personal finance, and learner-focused education support, on a shared local memory + model-agnostic wrapper.",
+  "author": {"name": "Setu Contributors"},
   "license": "MIT",
-  "keywords": [
-    "multi-domain",
-    "agents",
-    "orchestrator",
-    "security-research",
-    "web-development",
-    "agriculture",
-    "legal",
-    "finance",
-    "self-learning"
-  ],
-  "skills": [
-    "./skills/setu-orchestrator",
-    "./skills/setu-cyber",
-    "./skills/setu-webdev",
-    "./skills/setu-agri",
-    "./skills/setu-admin",
-    "./skills/setu-finance"
-  ],
-  "agents": [
-    "./agents"
-  ],
+  "keywords": ["multi-domain", "agents", "orchestrator", "security-research", "web-development", "agriculture", "legal", "finance", "education", "self-learning"],
+  "skills": ["./skills/setu-orchestrator", "./skills/setu-cyber", "./skills/setu-webdev", "./skills/setu-agri", "./skills/setu-admin", "./skills/setu-finance", "./skills/setu-education"],
+  "agents": ["./agents"],
   "commands": [],
   "hooks": {}
 }

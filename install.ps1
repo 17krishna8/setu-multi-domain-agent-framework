@@ -34,7 +34,7 @@ $Py = if ($env:PYTHON) { $env:PYTHON } else { 'python' }
 $Ledger = if ($env:SETU_LEDGER) { $env:SETU_LEDGER } else { Join-Path $HOME '.setu\install-ledger.json' }
 $env:SETU_LEDGER = $Ledger
 
-$AllDomains = @('cyber','webdev','admin','finance','agri')
+$AllDomains = @('cyber','webdev','admin','finance','agri','education')
 $MinimalDomains = @('cyber','finance')
 
 $SharedScripts = @('memory.py','model_wrapper.py','common.py','install_state.py','setu.py')
@@ -49,6 +49,7 @@ $DomainScripts = @{
   admin   = @('admin_docs.py')
   finance = @('finance.py')
   agri    = @('agri.py')
+  education = @('education.py')
 }
 $DomainRules = @{
   cyber   = @('patterns.json','dependencies.json')
@@ -56,6 +57,7 @@ $DomainRules = @{
   admin   = @('legal_corpus.json')
   finance = @('patterns.json')
   agri    = @()
+  education = @()
 }
 
 function Say($msg) { Write-Host $msg }
@@ -205,6 +207,7 @@ Installed packs: **__DOMAINS__** (profile: __PROFILE__)
 | RTI, grievance, consumer complaint | admin | `skills/setu-admin/SKILL.md` |
 | expenses, scams, EMI/loans | finance | `skills/setu-finance/SKILL.md` |
 | crop disease, pests, treatment | agri | `skills/setu-agri/SKILL.md` |
+| study planning, revision, practice | education | `skills/setu-education/SKILL.md` |
 
 Non-negotiable gates:
 - cyber: no active testing without confirmed authorization.
@@ -212,6 +215,7 @@ Non-negotiable gates:
 - admin: never final without a named human confirmation.
 - finance: never a model-generated number; EMI maths is Python only.
 - agri: no treatment advice below 0.6 confidence.
+- education: coach learning; do not complete graded work for the learner.
 
 Helper scripts:
 

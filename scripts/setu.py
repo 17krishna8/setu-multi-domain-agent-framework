@@ -20,7 +20,7 @@ Commands
     python3 setu.py route "is this EMI offer a scam?"
     python3 setu.py selftest                     # run every gate
 
-``doctor`` and ``selftest`` exist because a framework with five packs and a memory
+``doctor`` and ``selftest`` exist because a framework with multiple packs and memory
 layer fails in quiet ways. ``selftest`` asserts the safety gates still hold, so a
 refactor cannot silently remove one.
 """
@@ -49,7 +49,7 @@ def _resolve_layout() -> dict:
 
     Important: stop at the FIRST ancestor that holds agents/ or skills/. Walking
     further (up past the install root) finds the *source tree* on a developer's
-    machine and reports 34 agents for an install that has 23 — a health check that
+    machine and reports source-tree agents for a smaller install — a health check that
     counts files it is not responsible for is worse than no health check.
     """
     candidates = [HERE.parent, HERE.parent.parent, HERE.parent.parent.parent]
@@ -122,6 +122,13 @@ PACKS = {
         "entry": "scripts/finance.py",
         "gate": "no model-generated numbers; disclaimer always attached",
     },
+    "education": {
+        "skill": "setu-education",
+        "agents": 1,
+        "purpose": "study planning, spaced reviews, concept explanations, and practice",
+        "entry": "scripts/education.py",
+        "gate": "teach and coach; do not complete graded work for the learner",
+    },
 }
 
 # Cheap keyword router — the same intent/object logic the orchestrator skill uses,
@@ -143,6 +150,12 @@ ROUTE_SIGNALS = {
     "finance": [("emi", 3), ("loan", 3), ("interest rate", 2), ("scam", 3), ("fraud", 3),
                 ("expense", 2), ("budget", 2), ("transaction", 2), ("categor", 2),
                 ("instalment", 3), ("credit card", 2), ("otp", 1)],
+    "education": [("study plan", 4), ("study schedule", 4), ("spaced repetition", 4),
+                  ("flashcard", 3), ("revise", 2), ("revision", 2), ("exam prep", 4),
+                  ("practice question", 3), ("explain this concept", 2),
+                  ("study for", 2), ("homework help", 2), ("biology exam", 3),
+                  ("math exam", 3), ("learn about", 1), ("quiz me", 2),
+                  ("teach me", 2), ("study tips", 2), ("spaced review", 3)],
 }
 # Things that override the keyword score, because the object is decisive.
 OVERRIDES = [
@@ -425,6 +438,19 @@ def selftest() -> dict:
         except ValueError:
             return True, "math-shaped prompts refused without allow_math"
     check("finance: model cannot compute numbers", finance_guard)
+
+    # education: the deterministic planner enforces the user's time budget
+    def education_plan_gate():
+        import education
+        plan = education.study_plan(["fractions"], "2026-06-08", 45,
+                                    start_date="2026-06-01", session_minutes=45)
+        within_budget = all(day["total_minutes"] <= 45 for day in plan["schedule"])
+        no_exam_day = all(day["date"] != "2026-06-08" for day in plan["schedule"])
+        return ((within_budget and no_exam_day and
+                 plan["topics_scheduled"] == ["fractions"]),
+                f"budget respected={within_budget}; exam day excluded={no_exam_day}")
+    check("education: study plan respects time and exam date", education_plan_gate,
+          needs="education")
 
     # memory round-trip
     def memory_roundtrip():

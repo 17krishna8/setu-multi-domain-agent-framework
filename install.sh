@@ -26,7 +26,7 @@ LIST=0
 FORCE=0
 PY="${PYTHON:-python3}"
 
-ALL_DOMAINS=(cyber webdev admin finance agri)
+ALL_DOMAINS=(cyber webdev admin finance agri education)
 # The minimal profile is chosen for a small token budget: the two packs with the
 # highest day-to-day hit rate that need the fewest agents to be useful.
 MINIMAL_DOMAINS=(cyber finance)
@@ -152,6 +152,7 @@ declare -A DOMAIN_SCRIPTS=(
   [admin]="admin_docs.py"
   [finance]="finance.py"
   [agri]="agri.py"
+  [education]="education.py"
 )
 declare -A DOMAIN_RULES=(
   [cyber]="patterns.json dependencies.json"
@@ -185,6 +186,7 @@ Read the request, then follow the matching pack's instructions:
 | RTI, grievance, consumer complaint, legal citations | admin | \`skills/setu-admin/SKILL.md\` |
 | expenses, scams, EMI/loans | finance | \`skills/setu-finance/SKILL.md\` |
 | crop disease, pests, treatment, farm advisory | agri | \`skills/setu-agri/SKILL.md\` |
+| study plans, revision, practice, concept explanations | education | \`skills/setu-education/SKILL.md\` |
 
 Top-level router: \`skills/setu-orchestrator/SKILL.md\`
 
@@ -197,6 +199,7 @@ Top-level router: \`skills/setu-orchestrator/SKILL.md\`
 - **admin** — never mark a document final; a named human must confirm.
 - **finance** — never produce a number from the model; EMI maths is Python only.
 - **agri** — no treatment advice below 0.6 classification confidence.
+- **education** — coach learning; never complete graded work on the learner's behalf.
 
 ## Helper scripts
 

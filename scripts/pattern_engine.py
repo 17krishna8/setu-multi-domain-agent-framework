@@ -11,7 +11,7 @@ One matcher, two consumers:
 Both read the same ``scripts/rules/patterns.json``. Adding a rule there improves
 both packs, and the scoring is identical, so "how confident is Setu about this
 signal" means the same thing in every pack. That is the whole point of the
-shared layer: one scorer, one vocabulary, five domains.
+shared layer: one scorer, one vocabulary, multiple domains.
 
 Scoring
 -------

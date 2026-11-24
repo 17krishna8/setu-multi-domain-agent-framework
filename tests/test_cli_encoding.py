@@ -22,4 +22,4 @@ def test_setu_selftest_succeeds_with_legacy_windows_console_encoding():
     )
 
     assert proc.returncode == 0, proc.stderr
-    assert "10/10 gates hold" in proc.stdout
+    assert "11/11 gates hold" in proc.stdout
