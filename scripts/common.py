@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,6 +104,17 @@ def severity_hint(confidence: float, boost: str | None = None) -> str:
     if boost and _SEV_ORDER.get(boost.lower(), 9) < _SEV_ORDER[sev]:
         sev = boost.lower()
     return sev
+
+
+def configure_console() -> None:
+    """Avoid UnicodeEncodeError when diagnostics reach legacy Windows consoles."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            try:
+                reconfigure(errors="backslashreplace")
+            except (OSError, ValueError):
+                pass
 
 
 def now_iso() -> str:

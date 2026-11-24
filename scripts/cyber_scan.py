@@ -46,7 +46,7 @@ INJECTION_PROBES = {
     "ssti": ["{{7*7}}", "${7*7}"],
 }
 
-CATEGORY_FOR_KIND = {"sqli": "sqli", "traversal": "traversal", "ssti": "ssti", "xss": "sqli"}
+CATEGORY_FOR_KIND = {"sqli": "sqli", "traversal": "traversal", "ssti": "ssti", "xss": "xss"}
 # Display labels. Emitting "SQLI" and fixing it later in the formatter means the
 # acronym is wrong in every intermediate artifact too, so it is fixed at the source.
 KIND_LABEL = {"sqli": "SQLi", "xss": "XSS", "traversal": "path traversal",
@@ -55,7 +55,8 @@ CWE_FOR_KIND = {"sqli": "CWE-89", "xss": "CWE-79", "traversal": "CWE-22", "ssti"
 
 
 def inject_params(url: str, probes: dict | None = None,
-                  allow_private: bool = False) -> list[dict]:
+                  allow_private: bool = False,
+                  authorized: bool = False) -> list[dict]:
     """Reflected-baseline injection check.
 
     Deliberately shallow: send payload, look for the payload or an error
@@ -63,6 +64,7 @@ def inject_params(url: str, probes: dict | None = None,
     those are manual follow-ups, which is exactly what the ``confidence`` field
     is for. A reflection is not an execution, and the finding says so.
     """
+    cr.assert_authorized(authorized, passive=False)
     parts = urllib.parse.urlsplit(url)
     cr.assert_public(parts.hostname or "", allow_private)
     query = urllib.parse.parse_qs(parts.query, keep_blank_values=True)
@@ -74,6 +76,7 @@ def inject_params(url: str, probes: dict | None = None,
             specialist="cyber-injection", target=url, ftype="testing-note")]
 
     findings: list[dict] = []
+    request_failures: list[dict] = []
     for pname in query:
         for kind, payloads in (probes or INJECTION_PROBES).items():
             for payload in payloads:
@@ -81,8 +84,13 @@ def inject_params(url: str, probes: dict | None = None,
                 q[pname] = [payload]
                 test_url = urllib.parse.urlunsplit(
                     parts._replace(query=urllib.parse.urlencode(q, doseq=True)))
-                r = cr.http_get(test_url, timeout=8)
+                r = cr.http_get(test_url, timeout=8, authorized=authorized,
+                                allow_private=allow_private)
                 if not r.get("status"):
+                    request_failures.append({"url": cr._diagnostic_url(test_url),
+                                             "error": cr._diagnostic_error(r.get("error")),
+                                             "redirect_chain": [cr._diagnostic_url(hop)
+                                                                for hop in r.get("chain", [])]})
                     continue
                 body = r["body"]
                 verdict = pattern_engine.match_category(body, CATEGORY_FOR_KIND[kind])
@@ -122,6 +130,14 @@ def inject_params(url: str, probes: dict | None = None,
                     # evidence (and so it survives dedup merging)
                     outcome_confirmed=verdict.outcome_confirmed))
                 break   # one confirmed payload per kind/param is enough signal
+    if request_failures:
+        findings.append(common.finding(
+            finding=f"Injection testing incomplete: {len(request_failures)} probe request(s) did not complete.",
+            severity="info", confidence=1.0,
+            evidence={"failed_requests": request_failures[:10],
+                      "failure_count": len(request_failures),
+                      "result": "incomplete; no negative security conclusion"},
+            specialist="cyber-coverage", target=url, ftype="coverage-note"))
     return findings
 
 
@@ -288,7 +304,12 @@ def payload_corpus(technique: str) -> dict:
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+def _configure_console() -> None:
+    common.configure_console()
+
+
 def _emit(findings: list[dict], as_json: bool, out_path: str | None) -> None:
+    _configure_console()
     normalized = common.normalize_findings(findings)
     payload = json.dumps(normalized, indent=2, ensure_ascii=False)
     if out_path:
@@ -303,6 +324,7 @@ def _emit(findings: list[dict], as_json: bool, out_path: str | None) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_console()
     ap = argparse.ArgumentParser(
         prog="cyber_scan.py",
         description="Setu Cyber recon + vulnerability specialists (authorized testing only)")
@@ -328,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
         if a.subcommand == "selftest":
             return cr._selftest()
         if a.subcommand == "payloads":
+            _configure_console()
             print(json.dumps(payload_corpus(a.target or "xss"), indent=2))
             return 0
         if a.subcommand == "deps":
@@ -346,7 +369,8 @@ def main(argv: list[str] | None = None) -> int:
 
         if a.subcommand == "subdomain-enum":
             words = Path(a.wordlist).read_text().split() if a.wordlist else None
-            _emit(cr.subdomain_enum(a.target, words, a.passive, a.allow_private), a.json, a.out)
+            _emit(cr.subdomain_enum(a.target, words, a.passive, a.allow_private,
+                                    authorized=a.i_have_authorization), a.json, a.out)
             return 0
 
         # Everything below sends requests, so the authorization gate applies.
@@ -354,19 +378,23 @@ def main(argv: list[str] | None = None) -> int:
         host = urllib.parse.urlsplit(a.target).hostname if "://" in a.target else a.target
 
         if a.subcommand == "fingerprint":
-            _emit(cr.tech_fingerprint(a.target, a.allow_private), a.json, a.out)
+            _emit(cr.tech_fingerprint(a.target, a.allow_private,
+                                      authorized=a.i_have_authorization), a.json, a.out)
         elif a.subcommand == "endpoints":
-            _emit(cr.endpoint_discovery(a.target, allow_private=a.allow_private), a.json, a.out)
+            _emit(cr.endpoint_discovery(a.target, allow_private=a.allow_private,
+                                        authorized=a.i_have_authorization), a.json, a.out)
         elif a.subcommand == "osint":
             _emit(cr.osint(host or a.target), a.json, a.out)
         elif a.subcommand == "header-check":
-            _emit(cr.header_check(a.target, a.allow_private), a.json, a.out)
+            _emit(cr.header_check(a.target, a.allow_private,
+                                  authorized=a.i_have_authorization), a.json, a.out)
         elif a.subcommand == "injection":
             probes = None
             if a.kinds:
                 wanted = [k.strip() for k in a.kinds.split(",") if k.strip()]
                 probes = {k: v for k, v in INJECTION_PROBES.items() if k in wanted}
-            _emit(inject_params(a.target, probes, a.allow_private), a.json, a.out)
+            _emit(inject_params(a.target, probes, a.allow_private,
+                                authorized=a.i_have_authorization), a.json, a.out)
         return 0
     except cr.ScopeError as e:
         print(f"SCOPE REFUSED: {e}", file=sys.stderr)

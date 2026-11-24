@@ -19,6 +19,7 @@ Every function returns findings in the pack's single shape:
 """
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import os
@@ -38,8 +39,13 @@ import common  # noqa: E402
 UA = "Setu-Cyber/0.1 (+authorized-testing; contact the operator)"
 PRIVATE_NETS = [
     ipaddress.ip_network(n) for n in (
-        "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
-        "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10", "0.0.0.0/8",
+        "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+        "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.168.0.0/16",
+        "198.18.0.0/15", "224.0.0.0/4", "240.0.0.0/4",
+        "::/128", "::1/128", "::ffff:0:0/96", "64:ff9b::/96",
+        "100::/64", "2001::/23", "2001:db8::/32", "2002::/16",
+        "64:ff9b:1::/48", "::/96", "fec0::/10",
+        "fc00::/7", "fe80::/10", "ff00::/8",
     )
 ]
 
@@ -69,49 +75,198 @@ def resolve_host(host: str) -> list[str]:
 
 
 def is_private(addr: str) -> bool:
+    """Return true for non-global addresses, including mapped/transition IPv6."""
     try:
-        ip = ipaddress.ip_address(addr)
+        ip = ipaddress.ip_address(addr.strip("[]"))
     except ValueError:
         return False
-    return any(ip in net for net in PRIVATE_NETS)
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped:
+            return is_private(str(ip.ipv4_mapped))
+        if ip.sixtofour:
+            return is_private(str(ip.sixtofour))
+        if ip.teredo:
+            server, client = ip.teredo
+            return is_private(str(server)) or is_private(str(client))
+    return not ip.is_global or any(ip in net for net in PRIVATE_NETS)
 
 
-def assert_public(host: str, allow_private: bool = False) -> None:
-    if allow_private or not host:
-        return
-    for addr in resolve_host(host):
-        if is_private(addr):
-            raise ScopeError(
-                f"'{host}' resolves to non-public address {addr}. Refusing to fetch.\n"
-                "If this is an intentional lab target, pass --allow-private."
-            )
+def assert_public(host: str, allow_private: bool = False) -> list[str]:
+    """Resolve once, enforce address policy, and return IPs to pin at connect time."""
+    if not host:
+        raise ScopeError("refusing target without a hostname")
+    literal = host.strip("[]")
+    try:
+        ipaddress.ip_address(literal)
+    except ValueError:
+        addresses = resolve_host(host)
+    else:
+        addresses = [literal]
+    if not addresses:
+        raise ScopeError(f"cannot resolve host '{host}': no addresses returned")
+    if not allow_private:
+        for addr in addresses:
+            if is_private(addr):
+                raise ScopeError(
+                    f"'{host}' resolves to non-public address {addr}. Refusing to fetch.\n"
+                    "If this is an intentional lab target, pass --allow-private."
+                )
+    return addresses
 
 
-def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3) -> dict:
-    """GET -> {status, headers, body, url, elapsed_ms, error?}. Never raises on 4xx/5xx."""
+def _pinned_handlers(addresses: list[str]):
+    """Build direct HTTP handlers that connect only to previously checked IPs."""
+    class PinnedHTTPConnection(http.client.HTTPConnection):
+        def connect(self):
+            errors = []
+            for address in addresses:
+                try:
+                    self.sock = socket.create_connection(
+                        (address, self.port), self.timeout, self.source_address)
+                    break
+                except OSError as e:
+                    errors.append(e)
+            else:
+                raise errors[-1]
+            if self._tunnel_host:
+                self._tunnel()
+
+    class PinnedHTTPSConnection(http.client.HTTPSConnection):
+        def connect(self):
+            errors = []
+            for address in addresses:
+                try:
+                    self.sock = socket.create_connection(
+                        (address, self.port), self.timeout, self.source_address)
+                    break
+                except OSError as e:
+                    errors.append(e)
+            else:
+                raise errors[-1]
+            if self._tunnel_host:
+                self._tunnel()
+            server_hostname = self._tunnel_host or self.host
+            self.sock = self._context.wrap_socket(self.sock, server_hostname=server_hostname)
+
+    class PinnedHTTPHandler(urllib.request.HTTPHandler):
+        def http_open(self, req):
+            return self.do_open(PinnedHTTPConnection, req)
+
+    class PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req):
+            return self.do_open(PinnedHTTPSConnection, req,
+                                context=self._context, check_hostname=self._check_hostname)
+
+    return PinnedHTTPHandler(), PinnedHTTPSHandler(context=ssl.create_default_context())
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Return redirects to the caller so every destination can be revalidated."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
+             authorized: bool = False, allow_private: bool = False) -> dict:
+    """Safely GET an authorized target; validate authorization and every redirect."""
+    assert_authorized(authorized, passive=False)
     hops: list[str] = []
     cur = url
+    try:
+        initial = urllib.parse.urlsplit(url)
+        initial_port = initial.port or (443 if initial.scheme == "https" else 80)
+    except ValueError as e:
+        raise ScopeError(f"refusing invalid target URL: {url}: {e}") from e
+    initial_host = (initial.hostname or "").rstrip(".").lower()
+    if initial.scheme not in {"http", "https"} or not initial_host or \
+            initial.username or initial.password:
+        raise ScopeError(f"refusing invalid or unsupported target URL: {url}")
+    pinned_addresses = assert_public(initial_host, allow_private)
     for _ in range(max_redirects + 1):
-        host = urllib.parse.urlsplit(cur).hostname or ""
-        if not host:
-            raise ScopeError(f"no host in url: {cur}")
-        req = urllib.request.Request(cur, headers={"user-agent": UA, "accept": "*/*"})
+        try:
+            parts = urllib.parse.urlsplit(cur)
+            port = parts.port or (443 if parts.scheme == "https" else 80)
+        except ValueError as e:
+            if hops:
+                safe_url = _diagnostic_url(cur)
+                return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                        "error": f"invalid redirect URL: {safe_url}: {e}",
+                        "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
+            raise ScopeError(f"refusing invalid target URL: {cur}: {e}") from e
+        host = (parts.hostname or "").rstrip(".").lower()
+        if parts.scheme not in {"http", "https"} or not host or parts.username or parts.password:
+            if hops:
+                safe_url = _diagnostic_url(cur)
+                return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                        "error": f"invalid or unsupported redirect URL: {safe_url}",
+                        "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
+            raise ScopeError(f"refusing invalid or unsupported target URL: {cur}")
+        if initial.scheme == "https" and parts.scheme != "https":
+            safe_url = _diagnostic_url(cur)
+            return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                    "error": f"HTTPS downgrade redirect refused: {safe_url}",
+                    "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
+        upgrade = (initial.scheme == "http" and parts.scheme == "https"
+                   and initial_port == 80 and port == 443)
+        if host != initial_host or (port != initial_port and not upgrade):
+            # Refuse without resolving attacker-controlled redirect hosts.
+            safe_url = _diagnostic_url(cur)
+            return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                    "error": f"redirect outside the authorized origin: {safe_url}",
+                    "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
+        try:
+            req = urllib.request.Request(cur, headers={"user-agent": UA, "accept": "*/*"})
+        except (TypeError, ValueError) as e:
+            if hops:
+                safe_url = _diagnostic_url(cur)
+                return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                        "error": f"invalid redirect URL: {safe_url}: {e}",
+                        "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
+            raise ScopeError(f"refusing invalid target URL: {e}") from e
         t0 = time.perf_counter()
         try:
-            ctx = ssl.create_default_context() if cur.startswith("https") else None
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+            handlers = [urllib.request.ProxyHandler({}), _NoRedirectHandler(),
+                        *_pinned_handlers(pinned_addresses)]
+            opener = urllib.request.build_opener(*handlers)
+            with opener.open(req, timeout=timeout) as r:
                 body = r.read(400_000).decode("utf-8", errors="replace")
                 return {"status": r.status, "headers": dict(r.headers), "body": body,
                         "url": cur, "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
                         "chain": hops}
         except urllib.error.HTTPError as e:
+            # HTTP header lookup is case-insensitive on the original message;
+            # converting it to a plain dict first loses that guarantee.
+            location = e.headers.get("Location") if e.headers else None
+            headers = dict(e.headers or {})
+            if e.code in {301, 302, 303, 307, 308} and location:
+                if len(hops) >= max_redirects:
+                    return {"status": 0, "headers": {}, "body": "", "url": cur,
+                            "error": "too many redirects", "chain": hops}
+                hops.append(cur)
+                try:
+                    cur = urllib.parse.urljoin(cur, location)
+                except (TypeError, ValueError) as e:
+                    safe_url = _diagnostic_url(cur)
+                    return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                            "error": (f"invalid redirect Location from {safe_url} to "
+                                      f"{_diagnostic_redirect(cur, location)}: {e}"),
+                            "chain": [_diagnostic_url(item) for item in hops]}
+                continue
             body = e.read(200_000).decode("utf-8", errors="replace")
-            return {"status": e.code, "headers": dict(e.headers or {}), "body": body,
+            return {"status": e.code, "headers": headers, "body": body,
                     "url": cur, "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
                     "chain": hops}
         except (urllib.error.URLError, TimeoutError, ssl.SSLError, ConnectionError) as e:
             return {"status": 0, "headers": {}, "body": "", "url": cur,
                     "error": str(e), "chain": hops}
+        except (http.client.InvalidURL, ValueError) as e:
+            if hops:
+                safe_url = _diagnostic_url(cur)
+                return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                        "error": f"invalid redirect URL: {safe_url}: {e}",
+                        "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
+            raise ScopeError(f"refusing invalid target URL: {e}") from e
     return {"status": 0, "headers": {}, "body": "", "url": url, "error": "too many redirects",
             "chain": hops}
 
@@ -129,12 +284,14 @@ COMMON_SUBS = [
 
 def subdomain_enum(domain: str, wordlist: list[str] | None = None,
                    passive: bool = True, allow_private: bool = False,
-                   timeout: float = 2.0) -> list[dict]:
+                   timeout: float = 2.0, authorized: bool = False) -> list[dict]:
     """DNS-first enumeration. Passive mode never opens an HTTP connection.
 
     This is the cheap 80% of coverage. Pair it with ``ct_subdomains`` (crt.sh)
     and a real resolver for production use; the orchestrator does both.
     """
+    if not passive:
+        assert_authorized(authorized, passive=False)
     domain = domain.strip().lower().lstrip(".")
     out: list[dict] = []
     seen: set[str] = set()
@@ -161,7 +318,8 @@ def subdomain_enum(domain: str, wordlist: list[str] | None = None,
             return
         ev = {"host": host, "addresses": addrs}
         if not passive:
-            r = http_get(f"https://{host}/", timeout=timeout)
+            r = http_get(f"https://{host}/", timeout=timeout,
+                         authorized=authorized, allow_private=allow_private)
             if r.get("status"):
                 ev["http_status"] = r["status"]
                 ev["server"] = r["headers"].get("Server")
@@ -182,20 +340,23 @@ def ct_subdomains(domain: str, timeout: float = 12.0) -> list[str]:
     Fails *loudly*: if crt.sh is down you get a warning and an empty list,
     never a silent empty list that a report would read as "no subdomains exist".
     """
+    domain = domain.strip().lower().rstrip(".")
     url = f"https://crt.sh/?q=%25.{urllib.parse.quote(domain)}&output=json"
     req = urllib.request.Request(url, headers={"user-agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             rows = json.loads(r.read().decode("utf-8", errors="replace"))
     except Exception as e:  # noqa: BLE001 — third-party service, any failure is expected
+        common.configure_console()
         print(f"warning: crt.sh unavailable ({e}); CT lookup skipped", file=sys.stderr)
         return []
     hosts: set[str] = set()
     for row in rows if isinstance(rows, list) else []:
         for name in str(row.get("name_value", "")).splitlines():
             name = name.strip().lower().lstrip("*.")
-            if name.endswith(domain) and name != domain:
-                hosts.add(name)
+            if name == domain or name.endswith("." + domain):
+                if name != domain:
+                    hosts.add(name)
     return sorted(hosts)
 
 
@@ -220,9 +381,11 @@ TECH_SIGNATURES = [
 ]
 
 
-def tech_fingerprint(url: str, allow_private: bool = False) -> list[dict]:
+def tech_fingerprint(url: str, allow_private: bool = False,
+                     authorized: bool = False) -> list[dict]:
+    assert_authorized(authorized, passive=False)
     assert_public(urllib.parse.urlsplit(url).hostname or "", allow_private)
-    r = http_get(url)
+    r = http_get(url, authorized=authorized, allow_private=allow_private)
     if not r.get("status"):
         return [common.finding(
             finding=f"Target unreachable: {r.get('error')}", severity="info", confidence=0.9,
@@ -264,68 +427,231 @@ INTERESTING_PATHS = {
 }
 
 
+def _diagnostic_url(url: str) -> str:
+    """Keep redirect context useful without leaking URL credentials/query secrets."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host = parts.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        try:
+            port = f":{parts.port}" if parts.port else ""
+        except ValueError:
+            port = ""
+        return urllib.parse.urlunsplit((parts.scheme, host + port, parts.path, "", ""))
+    except (TypeError, ValueError):
+        return "<invalid redirect URL>"
+
+
+def _diagnostic_redirect(current: str, location: str) -> str:
+    try:
+        return _diagnostic_url(urllib.parse.urljoin(current, location))
+    except (TypeError, ValueError):
+        return "<invalid redirect Location>"
+
+
+def _diagnostic_error(error: str | None) -> str:
+    """Redact URL credentials and query strings embedded in error text."""
+    text = str(error or "request returned no status")
+
+    def clean_url(match: re.Match) -> str:
+        raw = match.group(0)
+        suffix = ""
+        while raw and raw[-1] in ".,;:)]}":
+            suffix = raw[-1] + suffix
+            raw = raw[:-1]
+        return _diagnostic_url(raw) + suffix
+
+    text = re.sub(r"https?://[^\s<>\"']+", clean_url, text, flags=re.I)
+    return re.sub(r"\?[^\s]+", "?<query-redacted>", text)
+
+
+def _request_coverage_note(stage: str, url: str, error: str | None,
+                           chain: list[str] | None = None) -> dict:
+    url = _diagnostic_url(url)
+    error = _diagnostic_error(error)
+    return common.finding(
+        finding=f"{stage} was incomplete or inconclusive because the request did not yield a reliable result.",
+        severity="info", confidence=1.0,
+        evidence={"stage": stage, "url": url,
+                  "error": error,
+                  "redirect_chain": [_diagnostic_url(item) for item in chain or []],
+                  "result": "incomplete; no negative security conclusion"},
+        specialist="cyber-coverage", target=url, ftype="coverage-note")
+
+
 def endpoint_discovery(url: str, paths: list[str] | None = None,
-                       allow_private: bool = False, timeout: float = 6.0) -> list[dict]:
+                       allow_private: bool = False, timeout: float = 6.0,
+                       authorized: bool = False) -> list[dict]:
+    assert_authorized(authorized, passive=False)
     parts = urllib.parse.urlsplit(url)
     assert_public(parts.hostname or "", allow_private)
     base = f"{parts.scheme}://{parts.netloc}"
     out: list[dict] = []
 
-    # Soft-404 suppression: measure the baseline noise before trusting a 200.
-    baseline = http_get(base + "/setu-nonexistent-" + os.urandom(4).hex(), timeout=timeout)
-    base_status, base_len = baseline.get("status", 404), len(baseline.get("body", ""))
+    # Soft-404 suppression: measure a clear 404/410 baseline before trusting a 200.
+    baseline_url = base + "/setu-nonexistent-" + os.urandom(4).hex()
+    baseline = http_get(baseline_url, timeout=timeout,
+                        authorized=authorized, allow_private=allow_private)
+    base_status, base_len = baseline.get("status"), len(baseline.get("body", ""))
+    # A 200 baseline is useful only to suppress matching soft-404 bodies; it is
+    # not evidence that a differing 200 endpoint is a real exposed resource.
+    baseline_trusted = base_status in (404, 410)
+    baseline_comparable = base_status == 200
+    if not baseline_trusted:
+        reason = baseline.get("error") or (
+            "HTTP 200 baseline is ambiguous" if baseline_comparable else
+            f"baseline returned HTTP {base_status or 'no status'}")
+        out.append(_request_coverage_note("Endpoint discovery baseline", baseline_url,
+                                          reason, baseline.get("chain")))
 
     for p in (paths or PATH_PROBES):
-        r = http_get(base + p, timeout=timeout)
+        probe_url = base + p
+        r = http_get(probe_url, timeout=timeout, authorized=authorized,
+                     allow_private=allow_private)
         if not r.get("status"):
+            out.append(_request_coverage_note(f"Endpoint probe {p}", r.get("url") or probe_url,
+                                              r.get("error"), r.get("chain")))
             continue
-        if (r["status"] == 200 and base_status == 200
-                and abs(len(r["body"]) - base_len) < 16):
-            continue    # identical to the 404 page => wildcard route, ignore
+        if baseline_comparable and r["status"] == 200 \
+                and abs(len(r["body"]) - base_len) < 16:
+            continue    # identical to the soft-404 baseline => wildcard route, ignore
         sev, desc, conf = INTERESTING_PATHS.get(
             p, ("info", f"Path reachable (HTTP {r['status']})", 0.5))
         if r["status"] == 403 and p in INTERESTING_PATHS:
             desc += " (403 = exists but forbidden)"
+        if not baseline_trusted:
+            desc += " (soft-404 baseline inconclusive; verify manually)"
+            conf = min(conf, 0.3)
         out.append(common.finding(
             finding=f"{p} -> HTTP {r['status']}: {desc}",
-            severity=sev if r["status"] in (200, 500) else "info",
-            confidence=conf if r["status"] in (200, 500) else round(conf * 0.6, 2),
+            severity=sev if baseline_trusted and r["status"] in (200, 500) else "info",
+            confidence=(conf if baseline_trusted and r["status"] in (200, 500)
+                        else min(round(conf * 0.6, 2), 0.3) if not baseline_trusted
+                        else round(conf * 0.6, 2)),
             evidence={"path": p, "status": r["status"], "length": len(r["body"]),
+                      "baseline_status": base_status, "baseline_trusted": baseline_trusted,
                       "snippet": r["body"][:200] if p in ("/.env", "/.git/HEAD") else ""},
+            outcome_confirmed=baseline_trusted,
             specialist="cyber-endpoint-discovery", target=base, ftype="exposed-endpoint"))
     return out
+
+
+def _valid_dns_name(name: str) -> bool:
+    """Accept DNS labels (including the _dmarc service label), never tool flags."""
+    if not name or len(name) > 253 or name.startswith("-"):
+        return False
+    labels = name.rstrip(".").split(".")
+    if not labels or any(not label or len(label) > 63 for label in labels):
+        return False
+    label_pattern = re.compile(r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?|_[A-Za-z0-9_-]+)")
+    return all(label_pattern.fullmatch(label) for label in labels)
+
+
+def _parse_nslookup_txt_records(output: str, returncode: int) -> list[str] | None:
+    """Parse nslookup output, preferring answer sections over retry diagnostics."""
+    answer_section = (output.split("Non-authoritative answer:", 1)[-1]
+                      if "Non-authoritative answer:" in output else output)
+    quoted = re.findall(r'"([^"\r\n]*)"', answer_section)
+    if quoted:
+        return quoted
+    text_answer = re.search(r"(?im)^.*?\btext\s*=\s*([^\r\n]+)", answer_section)
+    if text_answer:
+        return [text_answer.group(1).strip().rstrip(";")]
+    if re.search(r"non-existent domain|nxdomain", output, re.I):
+        return []
+    # An authority SOA alone does not distinguish NODATA from NXDOMAIN unless
+    # nslookup explicitly prints the negative-answer status. Keep it unknown.
+    if re.search(r"timed out|no response|server failure|SERVFAIL|REFUSED", output, re.I):
+        return None
+    if returncode == 0 and re.search(r"no answer|no records?", output, re.I):
+        return []
+    return None
+
+
+def _query_txt_records(name: str) -> list[str] | None:
+    """Query TXT records using common system tools; None means unavailable/failed."""
+    if not _valid_dns_name(name):
+        return None
+    import shutil
+    import subprocess
+
+    if shutil.which("dig"):
+        try:
+            result = subprocess.run(["dig", "+noall", "+comments", "+answer", "TXT", name],
+                                    capture_output=True, text=True, errors="replace",
+                                    timeout=6, check=False)
+            status = re.search(r"status:\s*(\w+)", result.stdout, re.I)
+            if result.returncode == 0 and status:
+                rcode = status.group(1).upper()
+                records = []
+                for line in result.stdout.splitlines():
+                    if re.search(r"\sIN\s+TXT\s", line, re.I):
+                        chunks = re.findall(r'"((?:[^"\\]|\\.)*)"', line)
+                        if chunks:
+                            records.append("".join(chunks))
+                # An answer wins over earlier retry diagnostics (e.g. SERVFAIL
+                # followed by a successful retry); only classify negatives when
+                # the output contains no TXT answer.
+                if records:
+                    return records
+                rcode = status.group(1).upper() if status else ""
+                if result.returncode == 0 and rcode in {"NOERROR", "NXDOMAIN"}:
+                    return []  # NODATA or NXDOMAIN with no TXT answers
+                return None
+        except (OSError, subprocess.SubprocessError, UnicodeError):
+            pass
+
+    if shutil.which("nslookup"):
+        try:
+            if not _valid_dns_name(name):
+                return None
+            result = subprocess.run(["nslookup", "-type=TXT", name], capture_output=True,
+                                    text=True, errors="replace", timeout=6, check=False)
+            output = result.stdout + "\n" + result.stderr
+            # Windows nslookup may emit a timeout from an initial resolver retry,
+            # then successfully return records. Parse answer before diagnostics.
+            records = _parse_nslookup_txt_records(output, result.returncode)
+            if records is not None:
+                return records
+        except (OSError, subprocess.SubprocessError, UnicodeError):
+            pass
+    return None
 
 
 def osint(domain: str) -> list[dict]:
     """Passive OSINT: mail posture + CT hostnames. Sends nothing to the target."""
     out: list[dict] = []
-    spf = ""
-    try:
-        import shutil
-        import subprocess
-        if shutil.which("dig"):
-            spf = subprocess.run(["dig", "+short", "TXT", domain], capture_output=True,
-                                 text=True, timeout=6).stdout
-    except Exception:  # noqa: BLE001
-        spf = ""
-    if "v=spf1" not in spf:
-        out.append(common.finding(
-            finding=f"No SPF record observed for {domain} — sender forgery is easier.",
-            severity="low", confidence=0.5,
-            evidence={"domain": domain, "spf_raw": spf[:300],
-                      "caveat": "Absence detected via a short dig; re-verify before reporting."},
-            specialist="cyber-osint", target=domain, ftype="email-spoofing"))
-    try:
-        socket.getaddrinfo(f"_dmarc.{domain}", None)
-        dmarc_found = True
-    except socket.gaierror:
-        dmarc_found = False
-    if not dmarc_found:
-        out.append(common.finding(
-            finding=f"No DMARC record observed for {domain}.",
-            severity="low", confidence=0.5,
-            evidence={"domain": domain, "checked": f"_dmarc.{domain}"},
-            specialist="cyber-osint", target=domain, ftype="email-spoofing"))
+    checks = (("SPF", domain, "v=spf1"),
+              ("DMARC", f"_dmarc.{domain}", "v=DMARC1"))
+    for label, name, marker in checks:
+        records = _query_txt_records(name)
+        matching = [record for record in records or []
+                    if record.lstrip().lower().startswith(marker.lower())]
+        if records is None:
+            out.append(common.finding(
+                finding=f"{label} TXT record could not be checked for {domain}.",
+                severity="info", confidence=1.0,
+                evidence={"stage": f"{label} TXT lookup", "domain": domain, "checked": name,
+                          "reason": "no supported TXT lookup tool or DNS query failed",
+                          "result": "unknown; no absence claim made"},
+                specialist="cyber-osint", target=name, ftype="coverage-note"))
+        elif not matching and label == "DMARC" and domain.count(".") > 1:
+            out.append(common.finding(
+                finding=f"No DMARC record observed at {name}; organizational-domain policy was not checked.",
+                severity="info", confidence=1.0,
+                evidence={"stage": "DMARC organizational-domain check",
+                          "domain": domain, "checked": name, "txt_records": records[:10],
+                          "result": "organizational-domain DMARC policy not evaluated; no absence claim"},
+                specialist="cyber-osint", target=name, ftype="coverage-note"))
+        elif not matching:
+            out.append(common.finding(
+                finding=f"No {label} record observed for {domain}.",
+                severity="low", confidence=0.5,
+                evidence={"stage": f"{label} TXT lookup", "domain": domain,
+                          "checked": name, "txt_records": records[:10],
+                          "caveat": "TXT lookup found no matching record; verify before reporting."},
+                specialist="cyber-osint", target=name, ftype="email-spoofing"))
     hosts = ct_subdomains(domain)
     if hosts:
         out.append(common.finding(
@@ -349,11 +675,14 @@ SECURITY_HEADERS = {
 }
 
 
-def header_check(url: str, allow_private: bool = False) -> list[dict]:
+def header_check(url: str, allow_private: bool = False,
+                 authorized: bool = False) -> list[dict]:
+    assert_authorized(authorized, passive=False)
     assert_public(urllib.parse.urlsplit(url).hostname or "", allow_private)
-    r = http_get(url)
+    r = http_get(url, authorized=authorized, allow_private=allow_private)
     if not r.get("status"):
-        return []
+        return [_request_coverage_note("Security-header check", r.get("url") or url,
+                                       r.get("error"), r.get("chain"))]
     hdrs = {k.lower(): v for k, v in r["headers"].items()}
     out: list[dict] = []
     for name, (sev, desc) in SECURITY_HEADERS.items():
@@ -386,11 +715,12 @@ def header_check(url: str, allow_private: bool = False) -> list[dict]:
             finding="CORS reflects a 'null' origin — sandboxed-iframe bypass.",
             severity="medium", confidence=0.7, evidence={"acao": acao},
             specialist="cyber-cloud-misconfig", target=url, ftype="cors", cwe="CWE-942"))
-    if url.startswith("http://"):
+    if (r.get("url") or url).startswith("http://"):
         out.append(common.finding(
             finding="Target served over plaintext HTTP with no redirect to HTTPS.",
             severity="medium", confidence=0.9,
-            evidence={"url": url, "status": r["status"]},
+            evidence={"url": r.get("url") or url, "redirect_chain": r.get("chain", []),
+                      "status": r["status"]},
             specialist="cyber-cloud-misconfig", target=url, ftype="transport", cwe="CWE-319"))
     return out
 

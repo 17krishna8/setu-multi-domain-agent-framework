@@ -449,6 +449,12 @@ def selftest() -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows consoles often use cp1252, which cannot encode arrows or regional
+    # language text in diagnostics. Preserve the message with \u escapes instead
+    # of crashing an otherwise successful command.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     ap = argparse.ArgumentParser(prog="setu.py", description="Setu framework CLI")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
