@@ -20,8 +20,8 @@ agri-classify ── label + confidence (from a pretrained model, or "unidentifi
       │            never invents a disease from a filename
       ▼
    ╔═══════════════════════════════════╗
-   ║  CONFIDENCE GATE: 0.6             ║
-   ║  < 0.6 → no remedy, consult expert ║
+   ║  GATE: confidence ≥ 0.6 + crop compatible ║
+   ║  Otherwise → no remedy, consult expert   ║
    ╚═══════════════════════════════════╝
       │
       ▼
@@ -36,6 +36,10 @@ agri-localize ── regional language, product names and numbers preserved
 
 ## The gate, in code
 
+Treatment requires confidence ≥ 0.6 and a compatible crop for crop-restricted
+knowledge-base entries. The treatment function rechecks crop compatibility, so
+editing a classification JSON file cannot bypass this gate.
+
 ```python
 tr = agri.treat(classification)
 # confidence 0.42 ->
@@ -45,7 +49,8 @@ tr = agri.treat(classification)
 ```
 
 Verified boundary behaviour: `0.599 → treatment_allowed: false`,
-`0.60 → treatment_allowed: true`.
+`0.60 → treatment_allowed: true` for a compatible, specified crop. A mismatched
+or missing crop cannot receive crop-restricted remedies.
 
 The asymmetry is deliberate. Missing advice costs a day and a phone call to the
 KVK. Wrong advice costs money, can burn the crop, leaves residue, and burns the
@@ -92,7 +97,7 @@ python3 scripts/agri.py localize --text advisory.txt --lang hi
 
 ## Non-negotiables
 
-- **No remedy below 0.6 confidence.** Not as a possibility, not in a footnote.
+- **No remedy below 0.6 or with a missing/mismatched crop for restricted guidance.** Not as a possibility, not in a footnote.
 - **No disease named without a model.** A filename is not evidence.
 - **No specific pesticide dose** you cannot source from a label — say "per label
   rate" and point at the extension officer.

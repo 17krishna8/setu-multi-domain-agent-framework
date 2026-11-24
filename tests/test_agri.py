@@ -46,6 +46,48 @@ def test_high_confidence_produces_ordered_remedies():
     assert "confirm_before_spraying" in res
 
 
+def test_treatment_refuses_crop_specific_remedies_for_mismatched_crop():
+    classification = agri.classify("x.jpg", "pepper",
+                                    classifier=_classifier("Early blight", 0.95))
+
+    assert classification["treatment_allowed"] is False
+    result = agri.treat(classification)
+    assert result["status"] == "crop-mismatch"
+    assert result["remedies"] == []
+
+
+def test_treatment_rechecks_crop_even_if_input_claims_allowed():
+    result = agri.treat({"label": "late blight", "crop": "grape", "confidence": 0.99,
+                         "treatment_allowed": True, "kb_key": "late-blight"})
+
+    assert result["status"] == "crop-mismatch"
+    assert result["remedies"] == []
+
+
+def test_treatment_does_not_trust_edited_kb_key():
+    result = agri.treat({"label": "late blight", "crop": "potato", "confidence": 0.99,
+                         "treatment_allowed": True, "kb_key": "aphids"})
+
+    assert result["status"] == "no-guidance"
+    assert result["remedies"] == []
+
+
+def test_crop_specific_treatment_requires_crop_information():
+    classification = agri.classify("x.jpg", None,
+                                    classifier=_classifier("Early blight", 0.95))
+
+    assert classification["treatment_allowed"] is False
+    assert agri.treat(classification)["remedies"] == []
+
+
+def test_crop_names_are_normalized_for_compatibility():
+    classification = agri.classify("x.jpg", "  TOMATO  ",
+                                    classifier=_classifier("Early blight", 0.95))
+
+    assert classification["treatment_allowed"] is True
+    assert agri.treat(classification)["status"] == "ok"
+
+
 def test_uncertain_path_still_gives_next_steps():
     res = agri.treat(agri.classify("x.jpg", "tomato",
                                   classifier=_classifier("blight", 0.3)))
