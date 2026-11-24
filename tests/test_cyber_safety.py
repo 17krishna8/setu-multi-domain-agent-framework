@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import cyber_recon as cr  # noqa: E402
 import cyber_scan  # noqa: E402
+import dedup  # noqa: E402
 import report_formatter  # noqa: E402
 
 
@@ -71,6 +72,68 @@ def test_txt_lookup_parses_dig_records_and_concatenates_chunks(monkeypatch):
     assert cr._query_txt_records("example.com") == ["v=spf1 include:_spf.example.net ~all"]
 
 
+def test_dig_nameserver_errors_are_unknown_not_absence(monkeypatch):
+    import shutil
+    import subprocess
+
+    output = ";; ->>HEADER<<- opcode: QUERY, status: SERVFAIL, id: 1\\n"
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/dig" if name == "dig" else None)
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs:
+                        subprocess.CompletedProcess(args[0], 0, stdout=output, stderr=""))
+
+    assert cr._query_txt_records("example.com") is None
+
+
+def test_nslookup_parser_prefers_answer_over_prior_timeout():
+    output = (
+        "DNS request timed out.\n"
+        "    timeout was 2 seconds.\n"
+        "Non-authoritative answer:\n"
+        "example.com text = \"v=spf1 -all\"\n"
+    )
+    assert cr._parse_nslookup_txt_records(output, 0) == ["v=spf1 -all"]
+
+
+def test_nslookup_parser_distinguishes_nxdomain_nodata_and_failures():
+    assert cr._parse_nslookup_txt_records(
+        "*** can't find _dmarc.example.com: Non-existent domain", 0) == []
+    assert cr._parse_nslookup_txt_records("*** No answer", 0) == []
+    assert cr._parse_nslookup_txt_records("DNS request timed out.", 0) is None
+    assert cr._parse_nslookup_txt_records(
+        "Non-authoritative answer:\nexample.com nameserver = ns1.example.com\n"
+        "example.com\n    primary name server = ns1.example.com\n", 0) is None
+    assert cr._parse_nslookup_txt_records(
+        "example.com text = \"v=spf1 -all\"\n", 0) == ["v=spf1 -all"]
+
+
+def test_nslookup_query_uses_windows_output_and_ignores_timeout_with_answer(monkeypatch):
+    import shutil
+    import subprocess
+
+    output = (
+        "DNS request timed out.\n"
+        "    timeout was 2 seconds.\n"
+        "Non-authoritative answer:\n"
+        "example.com text = \"v=spf1 -all\"\n"
+    )
+    monkeypatch.setattr(shutil, "which", lambda name: "nslookup.exe" if name == "nslookup" else None)
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs:
+                        subprocess.CompletedProcess(args[0], 0, stdout=output, stderr=""))
+
+    assert cr._query_txt_records("example.com") == ["v=spf1 -all"]
+
+
+def test_txt_lookup_rejects_option_like_dns_names(monkeypatch):
+    import shutil
+    import subprocess
+
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/dig")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs:
+                        pytest.fail("invalid names must not be passed to resolver tools"))
+
+    assert cr._query_txt_records("-f/etc/passwd") is None
+
+
 def test_txt_lookup_treats_dns_errors_as_unknown(monkeypatch):
     import shutil
     import subprocess
@@ -81,6 +144,23 @@ def test_txt_lookup_treats_dns_errors_as_unknown(monkeypatch):
                         subprocess.CompletedProcess(args[0], 0, stdout=output, stderr=""))
 
     assert cr._query_txt_records("example.com") is None
+
+
+def test_osint_preserves_error_and_checks_incomplete_dmarc_organization_scope(monkeypatch):
+    queries = []
+
+    def query(name):
+        queries.append(name)
+        return []
+
+    monkeypatch.setattr(cr, "_query_txt_records", query)
+    monkeypatch.setattr(cr, "ct_subdomains", lambda domain: [])
+
+    findings = cr.osint("api.example.com")
+
+    assert queries == ["api.example.com", "_dmarc.api.example.com"]
+    assert any(f["type"] == "coverage-note" and "organizational-domain policy"
+               in f["finding"] for f in findings)
 
 
 def test_osint_queries_txt_records_for_spf_and_dmarc(monkeypatch):
@@ -113,6 +193,20 @@ def test_osint_does_not_claim_missing_records_when_txt_lookup_is_unavailable(mon
                for f in findings)
 
 
+def test_osint_does_not_claim_subdomain_dmarc_absence_as_domain_policy(monkeypatch):
+    monkeypatch.setattr(cr, "_query_txt_records", lambda name: [])
+    monkeypatch.setattr(cr, "ct_subdomains", lambda domain: [])
+
+    findings = cr.osint("api.example.com")
+    dmarc = next(f for f in findings if "DMARC" in f["finding"])
+
+    assert dmarc["type"] == "coverage-note"
+    assert "organizational-domain policy was not checked" in dmarc["finding"]
+    assert dmarc["severity"] == "info"
+
+
+
+
 def test_osint_reports_absent_spf_and_dmarc_from_txt_results(monkeypatch):
     monkeypatch.setattr(cr, "_query_txt_records", lambda name: [])
     monkeypatch.setattr(cr, "ct_subdomains", lambda domain: [])
@@ -141,6 +235,90 @@ def test_malformed_or_unsupported_redirect_returns_error_result(monkeypatch, loc
     assert result["status"] == 0
     assert "error" in result
     assert result["chain"][0] == "https://public.example/start"
+    assert "redirect" in result["error"]
+    assert "password" not in result["url"]
+    if "example.com" in location:
+        assert "example.com" in result["error"]
+
+
+def test_failed_soft404_baseline_downgrades_endpoint_observations(monkeypatch):
+    monkeypatch.setattr(cr, "assert_public", lambda *args, **kwargs: None)
+    responses = iter([
+        {"status": 0, "headers": {}, "body": "", "url": "https://example.com/missing",
+         "error": "connection refused"},
+        {"status": 200, "headers": {}, "body": "catch-all page", "url": "https://example.com/admin"},
+    ])
+    monkeypatch.setattr(cr, "http_get", lambda *args, **kwargs: next(responses))
+
+    findings = cr.endpoint_discovery(
+        "https://example.com/", paths=["/admin"], authorized=True,
+    )
+
+    assert len(findings) == 2
+    observation = next(f for f in findings if f["type"] == "exposed-endpoint")
+    assert observation["severity"] == "info"
+    assert observation["confidence"] <= 0.3
+    assert observation["outcome_confirmed"] is False
+    assert observation["evidence"]["baseline_trusted"] is False
+    assert "inconclusive" in observation["finding"]
+
+
+def test_http_200_soft404_baseline_only_suppresses_matching_probe(monkeypatch):
+    monkeypatch.setattr(cr, "assert_public", lambda *args, **kwargs: None)
+    responses = iter([
+        {"status": 200, "headers": {}, "body": "same catch-all page", "url": "baseline"},
+        {"status": 200, "headers": {}, "body": "same catch-all page", "url": "probe"},
+    ])
+    monkeypatch.setattr(cr, "http_get", lambda *args, **kwargs: next(responses))
+
+    findings = cr.endpoint_discovery("https://example.com/", paths=["/admin"],
+                                     authorized=True)
+
+    assert not any(f["type"] == "exposed-endpoint" for f in findings)
+
+
+def test_coverage_notes_for_same_target_are_not_deduplicated():
+    notes = [
+        {"finding": "Header check incomplete", "severity": "info", "confidence": 1.0,
+         "evidence": {"stage": "headers"}, "specialist": "cyber-coverage",
+         "type": "coverage-note", "target": "https://example.com/"},
+        {"finding": "Endpoint scan incomplete", "severity": "info", "confidence": 1.0,
+         "evidence": {"stage": "endpoints"}, "specialist": "cyber-coverage",
+         "type": "coverage-note", "target": "https://example.com"},
+    ]
+
+    result = dedup.dedupe(notes)
+
+    assert len(result) == 2
+    assert {f["evidence"]["stage"] for f in result} == {"headers", "endpoints"}
+
+
+def test_coverage_report_includes_error_context():
+    report = report_formatter.to_markdown([{
+        "finding": "Header check incomplete", "severity": "info", "confidence": 1.0,
+        "evidence": {"url": "https://example.com/", "error": "connection refused"},
+        "specialist": "cyber-coverage", "type": "coverage-note",
+        "target": "https://example.com/",
+    }])
+
+    assert "https://example.com/" in report
+    assert "connection refused" in report
+
+
+def test_coverage_error_redacts_embedded_credentials_and_query_secrets():
+    error = cr._diagnostic_error(
+        "failed at https://user:pass@example.com/path?token=secret: connection refused")
+
+    assert "https://example.com/path" in error
+    assert "user" not in error and "pass" not in error
+    assert "token=secret" not in error and "secret" not in error
+    assert "connection refused" in error
+
+
+
+def test_diagnostic_redirect_url_redacts_credentials_and_query():
+    safe = cr._diagnostic_url("https://user:pass@example.com/path?token=secret#section")
+    assert safe == "https://example.com/path"
 
 
 def test_failed_http_helpers_return_incomplete_coverage_notes(monkeypatch):
@@ -211,24 +389,50 @@ def test_cyber_scan_console_escapes_unencodable_findings():
     assert "unicode" in result.stdout
 
 
-def test_cyber_report_clis_escape_unencodable_text_in_cp1252():
+def test_cyber_report_clis_configure_their_own_cp1252_console(tmp_path):
+    import json
     import os
     import subprocess
 
     root = Path(__file__).resolve().parent.parent
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "cp1252"
+    findings = [{
+        "finding": "unicode 中文",
+        "severity": "info",
+        "confidence": 1.0,
+        "evidence": {"note": "中文"},
+        "specialist": "test-one",
+        "target": "example.com",
+        "type": "recon",
+    }, {
+        "finding": "unicode second 中文",
+        "severity": "info",
+        "confidence": 0.9,
+        "evidence": {"note": "another 中文"},
+        "specialist": "test-two",
+        "target": "https://example.com/",
+        "type": "recon",
+    }]
+    input_file = tmp_path / "findings.json"
+    input_file.write_text(json.dumps(findings, ensure_ascii=False), encoding="utf-8")
+    env["PYTHONIOENCODING"] = "cp1252"
     cases = [
-        ("report_formatter", "report_formatter.to_markdown([{'finding': 'unicode ' + chr(0x4e2d), "
-         "'severity': 'info', 'confidence': 1.0, 'evidence': {'note': chr(0x4e2d)}, "
-         "'type': 'recon'}])"),
-        ("severity_scorer", "severity_scorer.to_markdown(severity_scorer.rank([{'finding': 'unicode ' + chr(0x4e2d), "
-         "'severity': 'info', 'confidence': 1.0, 'evidence': {'note': chr(0x4e2d)}, "
-         "'type': 'recon'}]))"),
+        [sys.executable, "scripts/report_formatter.py", str(input_file)],
+        [sys.executable, "scripts/severity_scorer.py", str(input_file),
+         "--out", str(tmp_path / "ranked.json")],
+        [sys.executable, "scripts/dedup.py", str(input_file), "--report"],
     ]
-    for module, expression in cases:
-        code = (f"import sys; sys.path.insert(0, 'scripts'); import {module}; "
-                f"{module}.common.configure_console(); print({expression})")
-        result = subprocess.run([sys.executable, "-c", code], cwd=root, env=env,
-                                capture_output=True, text=True, timeout=30)
-        assert result.returncode == 0, f"{module}: {result.stderr}"
+    for command in cases:
+        result = subprocess.run(command, cwd=root, env=env, capture_output=True,
+                                text=True, timeout=30)
+        assert result.returncode == 0, f"{command[-1]}: {result.stderr}"
+    chain_code = (
+        "import sys; sys.path.insert(0, 'scripts'); import cyber_chain; "
+        "cyber_chain.cr.assert_authorized = lambda *a, **k: "
+        "(_ for _ in ()).throw(cyber_chain.cr.ScopeError('refused 中文')); "
+        "cyber_chain.main(['--target', 'https://example.com/'])"
+    )
+    chain_result = subprocess.run([sys.executable, "-c", chain_code], cwd=root,
+                                  env=env, capture_output=True, text=True, timeout=30)
+    assert "refused" in chain_result.stderr

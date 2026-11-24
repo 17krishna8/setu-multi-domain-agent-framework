@@ -189,30 +189,40 @@ def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
             port = parts.port or (443 if parts.scheme == "https" else 80)
         except ValueError as e:
             if hops:
-                return {"status": 0, "headers": {}, "body": "", "url": cur,
-                        "error": f"invalid redirect URL: {e}", "chain": hops + [cur]}
+                safe_url = _diagnostic_url(cur)
+                return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                        "error": f"invalid redirect URL: {safe_url}: {e}",
+                        "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
             raise ScopeError(f"refusing invalid target URL: {cur}: {e}") from e
         host = (parts.hostname or "").rstrip(".").lower()
         if parts.scheme not in {"http", "https"} or not host or parts.username or parts.password:
             if hops:
-                return {"status": 0, "headers": {}, "body": "", "url": cur,
-                        "error": "invalid or unsupported redirect URL", "chain": hops + [cur]}
+                safe_url = _diagnostic_url(cur)
+                return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                        "error": f"invalid or unsupported redirect URL: {safe_url}",
+                        "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
             raise ScopeError(f"refusing invalid or unsupported target URL: {cur}")
         if initial.scheme == "https" and parts.scheme != "https":
-            return {"status": 0, "headers": {}, "body": "", "url": cur,
-                    "error": "HTTPS downgrade redirect refused", "chain": hops + [cur]}
+            safe_url = _diagnostic_url(cur)
+            return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                    "error": f"HTTPS downgrade redirect refused: {safe_url}",
+                    "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
         upgrade = (initial.scheme == "http" and parts.scheme == "https"
                    and initial_port == 80 and port == 443)
         if host != initial_host or (port != initial_port and not upgrade):
             # Refuse without resolving attacker-controlled redirect hosts.
-            return {"status": 0, "headers": {}, "body": "", "url": cur,
-                    "error": "redirect outside the authorized origin", "chain": hops + [cur]}
+            safe_url = _diagnostic_url(cur)
+            return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                    "error": f"redirect outside the authorized origin: {safe_url}",
+                    "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
         try:
             req = urllib.request.Request(cur, headers={"user-agent": UA, "accept": "*/*"})
         except (TypeError, ValueError) as e:
             if hops:
-                return {"status": 0, "headers": {}, "body": "", "url": cur,
-                        "error": f"invalid redirect URL: {e}", "chain": hops + [cur]}
+                safe_url = _diagnostic_url(cur)
+                return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                        "error": f"invalid redirect URL: {safe_url}: {e}",
+                        "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
             raise ScopeError(f"refusing invalid target URL: {e}") from e
         t0 = time.perf_counter()
         try:
@@ -237,8 +247,11 @@ def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
                 try:
                     cur = urllib.parse.urljoin(cur, location)
                 except (TypeError, ValueError) as e:
-                    return {"status": 0, "headers": {}, "body": "", "url": cur,
-                            "error": f"invalid redirect Location: {e}", "chain": hops}
+                    safe_url = _diagnostic_url(cur)
+                    return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                            "error": (f"invalid redirect Location from {safe_url} to "
+                                      f"{_diagnostic_redirect(cur, location)}: {e}"),
+                            "chain": [_diagnostic_url(item) for item in hops]}
                 continue
             body = e.read(200_000).decode("utf-8", errors="replace")
             return {"status": e.code, "headers": headers, "body": body,
@@ -249,8 +262,10 @@ def http_get(url: str, timeout: float = 10.0, max_redirects: int = 3, *,
                     "error": str(e), "chain": hops}
         except (http.client.InvalidURL, ValueError) as e:
             if hops:
-                return {"status": 0, "headers": {}, "body": "", "url": cur,
-                        "error": f"invalid redirect URL: {e}", "chain": hops + [cur]}
+                safe_url = _diagnostic_url(cur)
+                return {"status": 0, "headers": {}, "body": "", "url": safe_url,
+                        "error": f"invalid redirect URL: {safe_url}: {e}",
+                        "chain": [_diagnostic_url(item) for item in hops] + [safe_url]}
             raise ScopeError(f"refusing invalid target URL: {e}") from e
     return {"status": 0, "headers": {}, "body": "", "url": url, "error": "too many redirects",
             "chain": hops}
@@ -332,6 +347,7 @@ def ct_subdomains(domain: str, timeout: float = 12.0) -> list[str]:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             rows = json.loads(r.read().decode("utf-8", errors="replace"))
     except Exception as e:  # noqa: BLE001 — third-party service, any failure is expected
+        common.configure_console()
         print(f"warning: crt.sh unavailable ({e}); CT lookup skipped", file=sys.stderr)
         return []
     hosts: set[str] = set()
@@ -411,11 +427,55 @@ INTERESTING_PATHS = {
 }
 
 
-def _request_coverage_note(stage: str, url: str, error: str | None) -> dict:
+def _diagnostic_url(url: str) -> str:
+    """Keep redirect context useful without leaking URL credentials/query secrets."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host = parts.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        try:
+            port = f":{parts.port}" if parts.port else ""
+        except ValueError:
+            port = ""
+        return urllib.parse.urlunsplit((parts.scheme, host + port, parts.path, "", ""))
+    except (TypeError, ValueError):
+        return "<invalid redirect URL>"
+
+
+def _diagnostic_redirect(current: str, location: str) -> str:
+    try:
+        return _diagnostic_url(urllib.parse.urljoin(current, location))
+    except (TypeError, ValueError):
+        return "<invalid redirect Location>"
+
+
+def _diagnostic_error(error: str | None) -> str:
+    """Redact URL credentials and query strings embedded in error text."""
+    text = str(error or "request returned no status")
+
+    def clean_url(match: re.Match) -> str:
+        raw = match.group(0)
+        suffix = ""
+        while raw and raw[-1] in ".,;:)]}":
+            suffix = raw[-1] + suffix
+            raw = raw[:-1]
+        return _diagnostic_url(raw) + suffix
+
+    text = re.sub(r"https?://[^\s<>\"']+", clean_url, text, flags=re.I)
+    return re.sub(r"\?[^\s]+", "?<query-redacted>", text)
+
+
+def _request_coverage_note(stage: str, url: str, error: str | None,
+                           chain: list[str] | None = None) -> dict:
+    url = _diagnostic_url(url)
+    error = _diagnostic_error(error)
     return common.finding(
-        finding=f"{stage} was not fully tested because the request did not complete.",
+        finding=f"{stage} was incomplete or inconclusive because the request did not yield a reliable result.",
         severity="info", confidence=1.0,
-        evidence={"url": url, "error": error or "request returned no status",
+        evidence={"stage": stage, "url": url,
+                  "error": error,
+                  "redirect_chain": [_diagnostic_url(item) for item in chain or []],
                   "result": "incomplete; no negative security conclusion"},
         specialist="cyber-coverage", target=url, ftype="coverage-note")
 
@@ -429,80 +489,132 @@ def endpoint_discovery(url: str, paths: list[str] | None = None,
     base = f"{parts.scheme}://{parts.netloc}"
     out: list[dict] = []
 
-    # Soft-404 suppression: measure the baseline noise before trusting a 200.
-    baseline = http_get(base + "/setu-nonexistent-" + os.urandom(4).hex(), timeout=timeout,
+    # Soft-404 suppression: measure a clear 404/410 baseline before trusting a 200.
+    baseline_url = base + "/setu-nonexistent-" + os.urandom(4).hex()
+    baseline = http_get(baseline_url, timeout=timeout,
                         authorized=authorized, allow_private=allow_private)
-    base_status, base_len = baseline.get("status", 404), len(baseline.get("body", ""))
-    if not base_status:
-        out.append(_request_coverage_note("Endpoint discovery baseline", base,
-                                          baseline.get("error")))
+    base_status, base_len = baseline.get("status"), len(baseline.get("body", ""))
+    # A 200 baseline is useful only to suppress matching soft-404 bodies; it is
+    # not evidence that a differing 200 endpoint is a real exposed resource.
+    baseline_trusted = base_status in (404, 410)
+    baseline_comparable = base_status == 200
+    if not baseline_trusted:
+        reason = baseline.get("error") or (
+            "HTTP 200 baseline is ambiguous" if baseline_comparable else
+            f"baseline returned HTTP {base_status or 'no status'}")
+        out.append(_request_coverage_note("Endpoint discovery baseline", baseline_url,
+                                          reason, baseline.get("chain")))
 
     for p in (paths or PATH_PROBES):
-        r = http_get(base + p, timeout=timeout, authorized=authorized,
+        probe_url = base + p
+        r = http_get(probe_url, timeout=timeout, authorized=authorized,
                      allow_private=allow_private)
         if not r.get("status"):
-            out.append(_request_coverage_note(f"Endpoint probe {p}", base + p,
-                                              r.get("error")))
+            out.append(_request_coverage_note(f"Endpoint probe {p}", r.get("url") or probe_url,
+                                              r.get("error"), r.get("chain")))
             continue
-        if (r["status"] == 200 and base_status == 200
-                and abs(len(r["body"]) - base_len) < 16):
-            continue    # identical to the 404 page => wildcard route, ignore
+        if baseline_comparable and r["status"] == 200 \
+                and abs(len(r["body"]) - base_len) < 16:
+            continue    # identical to the soft-404 baseline => wildcard route, ignore
         sev, desc, conf = INTERESTING_PATHS.get(
             p, ("info", f"Path reachable (HTTP {r['status']})", 0.5))
         if r["status"] == 403 and p in INTERESTING_PATHS:
             desc += " (403 = exists but forbidden)"
+        if not baseline_trusted:
+            desc += " (soft-404 baseline inconclusive; verify manually)"
+            conf = min(conf, 0.3)
         out.append(common.finding(
             finding=f"{p} -> HTTP {r['status']}: {desc}",
-            severity=sev if r["status"] in (200, 500) else "info",
-            confidence=conf if r["status"] in (200, 500) else round(conf * 0.6, 2),
+            severity=sev if baseline_trusted and r["status"] in (200, 500) else "info",
+            confidence=(conf if baseline_trusted and r["status"] in (200, 500)
+                        else min(round(conf * 0.6, 2), 0.3) if not baseline_trusted
+                        else round(conf * 0.6, 2)),
             evidence={"path": p, "status": r["status"], "length": len(r["body"]),
+                      "baseline_status": base_status, "baseline_trusted": baseline_trusted,
                       "snippet": r["body"][:200] if p in ("/.env", "/.git/HEAD") else ""},
+            outcome_confirmed=baseline_trusted,
             specialist="cyber-endpoint-discovery", target=base, ftype="exposed-endpoint"))
     return out
 
 
+def _valid_dns_name(name: str) -> bool:
+    """Accept DNS labels (including the _dmarc service label), never tool flags."""
+    if not name or len(name) > 253 or name.startswith("-"):
+        return False
+    labels = name.rstrip(".").split(".")
+    if not labels or any(not label or len(label) > 63 for label in labels):
+        return False
+    label_pattern = re.compile(r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?|_[A-Za-z0-9_-]+)")
+    return all(label_pattern.fullmatch(label) for label in labels)
+
+
+def _parse_nslookup_txt_records(output: str, returncode: int) -> list[str] | None:
+    """Parse nslookup output, preferring answer sections over retry diagnostics."""
+    answer_section = (output.split("Non-authoritative answer:", 1)[-1]
+                      if "Non-authoritative answer:" in output else output)
+    quoted = re.findall(r'"([^"\r\n]*)"', answer_section)
+    if quoted:
+        return quoted
+    text_answer = re.search(r"(?im)^.*?\btext\s*=\s*([^\r\n]+)", answer_section)
+    if text_answer:
+        return [text_answer.group(1).strip().rstrip(";")]
+    if re.search(r"non-existent domain|nxdomain", output, re.I):
+        return []
+    # An authority SOA alone does not distinguish NODATA from NXDOMAIN unless
+    # nslookup explicitly prints the negative-answer status. Keep it unknown.
+    if re.search(r"timed out|no response|server failure|SERVFAIL|REFUSED", output, re.I):
+        return None
+    if returncode == 0 and re.search(r"no answer|no records?", output, re.I):
+        return []
+    return None
+
+
 def _query_txt_records(name: str) -> list[str] | None:
     """Query TXT records using common system tools; None means unavailable/failed."""
+    if not _valid_dns_name(name):
+        return None
     import shutil
     import subprocess
 
     if shutil.which("dig"):
         try:
             result = subprocess.run(["dig", "+noall", "+comments", "+answer", "TXT", name],
-                                    capture_output=True, text=True, timeout=6, check=False)
+                                    capture_output=True, text=True, errors="replace",
+                                    timeout=6, check=False)
             status = re.search(r"status:\s*(\w+)", result.stdout, re.I)
             if result.returncode == 0 and status:
                 rcode = status.group(1).upper()
-                if rcode in {"NOERROR", "NXDOMAIN"}:
-                    records = []
-                    for line in result.stdout.splitlines():
-                        if re.search(r"\sIN\s+TXT\s", line, re.I):
-                            chunks = re.findall(r'"([^"]*)"', line)
-                            if chunks:
-                                records.append("".join(chunks))
-                    # NOERROR with no TXT answer (NODATA) and NXDOMAIN are both
-                    # definitive absence for this name/type. Other rcodes are unknown.
+                records = []
+                for line in result.stdout.splitlines():
+                    if re.search(r"\sIN\s+TXT\s", line, re.I):
+                        chunks = re.findall(r'"((?:[^"\\]|\\.)*)"', line)
+                        if chunks:
+                            records.append("".join(chunks))
+                # An answer wins over earlier retry diagnostics (e.g. SERVFAIL
+                # followed by a successful retry); only classify negatives when
+                # the output contains no TXT answer.
+                if records:
                     return records
+                rcode = status.group(1).upper() if status else ""
+                if result.returncode == 0 and rcode in {"NOERROR", "NXDOMAIN"}:
+                    return []  # NODATA or NXDOMAIN with no TXT answers
                 return None
-        except (OSError, subprocess.SubprocessError):
+        except (OSError, subprocess.SubprocessError, UnicodeError):
             pass
 
     if shutil.which("nslookup"):
         try:
-            result = subprocess.run(["nslookup", "-type=TXT", name], capture_output=True,
-                                    text=True, timeout=6, check=False)
-            output = result.stdout + "\n" + result.stderr
-            if re.search(r"non-existent domain|NXDOMAIN", output, re.I):
-                return []
-            if re.search(r"timed out|no response|server failure|SERVFAIL|REFUSED", output, re.I):
+            if not _valid_dns_name(name):
                 return None
-            if result.returncode == 0:
-                quoted = re.findall(r'"([^"]*)"', output)
-                if quoted:
-                    return quoted
-                if re.search(r"no answer|no records?", output, re.I):
-                    return []
-        except (OSError, subprocess.SubprocessError):
+            result = subprocess.run(["nslookup", "-type=TXT", name], capture_output=True,
+                                    text=True, errors="replace", timeout=6, check=False)
+            output = result.stdout + "\n" + result.stderr
+            # Windows nslookup may emit a timeout from an initial resolver retry,
+            # then successfully return records. Parse answer before diagnostics.
+            records = _parse_nslookup_txt_records(output, result.returncode)
+            if records is not None:
+                return records
+        except (OSError, subprocess.SubprocessError, UnicodeError):
             pass
     return None
 
@@ -520,15 +632,24 @@ def osint(domain: str) -> list[dict]:
             out.append(common.finding(
                 finding=f"{label} TXT record could not be checked for {domain}.",
                 severity="info", confidence=1.0,
-                evidence={"domain": domain, "checked": name,
+                evidence={"stage": f"{label} TXT lookup", "domain": domain, "checked": name,
                           "reason": "no supported TXT lookup tool or DNS query failed",
                           "result": "unknown; no absence claim made"},
+                specialist="cyber-osint", target=name, ftype="coverage-note"))
+        elif not matching and label == "DMARC" and domain.count(".") > 1:
+            out.append(common.finding(
+                finding=f"No DMARC record observed at {name}; organizational-domain policy was not checked.",
+                severity="info", confidence=1.0,
+                evidence={"stage": "DMARC organizational-domain check",
+                          "domain": domain, "checked": name, "txt_records": records[:10],
+                          "result": "organizational-domain DMARC policy not evaluated; no absence claim"},
                 specialist="cyber-osint", target=name, ftype="coverage-note"))
         elif not matching:
             out.append(common.finding(
                 finding=f"No {label} record observed for {domain}.",
                 severity="low", confidence=0.5,
-                evidence={"domain": domain, "checked": name, "txt_records": records[:10],
+                evidence={"stage": f"{label} TXT lookup", "domain": domain,
+                          "checked": name, "txt_records": records[:10],
                           "caveat": "TXT lookup found no matching record; verify before reporting."},
                 specialist="cyber-osint", target=name, ftype="email-spoofing"))
     hosts = ct_subdomains(domain)
@@ -560,7 +681,8 @@ def header_check(url: str, allow_private: bool = False,
     assert_public(urllib.parse.urlsplit(url).hostname or "", allow_private)
     r = http_get(url, authorized=authorized, allow_private=allow_private)
     if not r.get("status"):
-        return [_request_coverage_note("Security-header check", url, r.get("error"))]
+        return [_request_coverage_note("Security-header check", r.get("url") or url,
+                                       r.get("error"), r.get("chain"))]
     hdrs = {k.lower(): v for k, v in r["headers"].items()}
     out: list[dict] = []
     for name, (sev, desc) in SECURITY_HEADERS.items():

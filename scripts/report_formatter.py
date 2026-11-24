@@ -306,7 +306,14 @@ def to_markdown(findings: list[dict], title: str = "Security Assessment",
                 "These notes identify checks that were incomplete or informational; they "
                 "must not be interpreted as evidence that the target is secure or insecure.", ""]
         for f in notes:
-            out.append(f"- {common.truncate(str(f.get('finding','')), 200)}")
+            evidence = f.get("evidence") if isinstance(f.get("evidence"), dict) else {}
+            details = []
+            if evidence.get("url"):
+                details.append(str(evidence["url"]))
+            if evidence.get("error"):
+                details.append(str(evidence["error"]))
+            suffix = f" — {'; '.join(details)}" if details else ""
+            out.append(f"- {common.truncate(str(f.get('finding','')), 200)}{suffix}")
         out.append("")
 
     out += ["---", "",

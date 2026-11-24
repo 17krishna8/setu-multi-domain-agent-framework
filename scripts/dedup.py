@@ -103,6 +103,12 @@ def dedupe(findings: list[dict], explain: bool = False) -> list[dict]:
     findings = common.normalize_findings(findings)
     buckets: dict[tuple, list[dict]] = {}
     for f in findings:
+        if f.get("type") in {"coverage-note", "testing-note"}:
+            # Coverage notes describe distinct checks; merging can erase the
+            # stage-specific reason and its evidence.
+            buckets.setdefault((str(f.get("type")), normalize_target(f.get("target") or ""),
+                                len(buckets)), []).append(f)
+            continue
         key = similarity_key(f)
         # refine by parameter overlap: same type+target but different params are
         # different injection points, so keep a sub-bucket per param signature

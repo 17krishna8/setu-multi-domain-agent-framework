@@ -87,7 +87,10 @@ def inject_params(url: str, probes: dict | None = None,
                 r = cr.http_get(test_url, timeout=8, authorized=authorized,
                                 allow_private=allow_private)
                 if not r.get("status"):
-                    request_failures.append({"url": test_url, "error": r.get("error")})
+                    request_failures.append({"url": cr._diagnostic_url(test_url),
+                                             "error": cr._diagnostic_error(r.get("error")),
+                                             "redirect_chain": [cr._diagnostic_url(hop)
+                                                                for hop in r.get("chain", [])]})
                     continue
                 body = r["body"]
                 verdict = pattern_engine.match_category(body, CATEGORY_FOR_KIND[kind])
