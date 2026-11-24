@@ -88,6 +88,15 @@ def test_crop_names_are_normalized_for_compatibility():
     assert agri.treat(classification)["status"] == "ok"
 
 
+def test_unknown_restricted_crop_scope_fails_closed(monkeypatch):
+    key = "early-blight"
+    monkeypatch.setitem(agri.KNOWLEDGE_BASE[key], "crop", "tomato/potato/pepper")
+
+    assert agri._crop_compatible(key, "tomato") is False
+    assert agri.treat({"label": "early blight", "crop": "tomato",
+                       "confidence": 0.99})["remedies"] == []
+
+
 def test_uncertain_path_still_gives_next_steps():
     res = agri.treat(agri.classify("x.jpg", "tomato",
                                   classifier=_classifier("blight", 0.3)))

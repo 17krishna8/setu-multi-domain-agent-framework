@@ -257,9 +257,11 @@ def _crop_compatible(kb_key: str, crop: str | None) -> bool:
     """Check explicit crop restrictions before allowing knowledge-base remedies."""
     crop_scope = KNOWLEDGE_BASE.get(kb_key, {}).get("crop", "")
     allowed = {"tomato/potato": {"tomato", "tomatoes", "potato", "potatoes"}}
+    if not crop_scope or crop_scope.lower().startswith("wide host range"):
+        return True
     restricted_crops = allowed.get(crop_scope)
     if restricted_crops is None:
-        return True
+        return False
     crop_name = re.sub(r"[^a-z0-9]+", "-", str(crop or "").strip().lower()).strip("-")
     return crop_name in restricted_crops
 
