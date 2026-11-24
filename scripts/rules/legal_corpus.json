@@ -5,7 +5,11 @@
   "acts": {
     "rti-2005": {
       "short_name": "Right to Information Act, 2005",
-      "aliases": ["RTI Act", "Right to Information Act", "RTI Act 2005"],
+      "aliases": [
+        "RTI Act",
+        "Right to Information Act",
+        "RTI Act 2005"
+      ],
       "source": "https://www.indiacode.nic.in/handle/123456789/2079",
       "sections": {
         "6(1)": {
@@ -38,13 +42,34 @@
           "heading": "First appeal",
           "text": "Any person who, does not receive a decision within the time specified in sub-section (1) or clause (a) of sub-section (3) of section 7, or is aggrieved by a decision of the Central Public Information Officer or State Public Information Officer, as the case may be, may within thirty days from the expiry of such period or from the receipt of such a decision prefer an appeal to such officer who is senior in rank to the Central Public Information Officer or State Public Information Officer, as the case may be, in each public authority.",
           "source": "RTI Act 2005, s.19(1)"
+        },
+        "7(2)": {
+          "heading": "Deemed refusal where no decision is given",
+          "text": "Where the public information officer fails to give a decision on the request within the period specified in subsection (1), the officer is deemed to have refused the request.",
+          "source": "RTI Act 2005, s.7(2)",
+          "caveat": "Summary; confirm exact wording, exceptions and applicable rules in the current official Act."
+        },
+        "19(3)": {
+          "heading": "Second appeal",
+          "text": "A second appeal against the decision under subsection (1) lies to the Central Information Commission or State Information Commission, as applicable, within ninety days or a further period allowed for sufficient cause.",
+          "source": "RTI Act 2005, s.19(3)",
+          "caveat": "Summary; confirm exact wording and limitation calculation in the current official Act."
+        },
+        "20": {
+          "heading": "Penalties",
+          "text": "The Information Commission may impose the statutory monetary penalty on a public information officer for specified defaults, after giving the officer a reasonable opportunity of being heard.",
+          "source": "RTI Act 2005, s.20",
+          "caveat": "Summary only; statutory conditions, amount, exceptions and procedure must be checked in the current official Act."
         }
       },
       "known_max_section": 31
     },
     "consumer-2019": {
       "short_name": "Consumer Protection Act, 2019",
-      "aliases": ["Consumer Protection Act", "CPA 2019"],
+      "aliases": [
+        "Consumer Protection Act",
+        "CPA 2019"
+      ],
       "source": "https://www.indiacode.nic.in/handle/123456789/15256",
       "sections": {
         "2(11)": {
@@ -62,13 +87,40 @@
           "text": "A complaint relating to any goods or services may be filed with the District Commission by a complainant.",
           "source": "Consumer Protection Act 2019, s.35",
           "caveat": "Summarised in this corpus. Quote the official text, not this entry."
+        },
+        "2(7)": {
+          "heading": "Consumer",
+          "text": "Defines consumer status for persons buying goods or hiring or availing services for consideration, subject to statutory exclusions and explanations.",
+          "source": "Consumer Protection Act 2019, s.2(7)",
+          "caveat": "Summary; exclusions and statutory explanations are material. Confirm exact wording in the official Act."
+        },
+        "2(9)": {
+          "heading": "Consumer rights",
+          "text": "Lists consumer rights, including protection against hazardous goods and services, information, choice, being heard, redressal and consumer awareness.",
+          "source": "Consumer Protection Act 2019, s.2(9)",
+          "caveat": "Summary only; verify the full statutory list and exact wording in the official Act."
+        },
+        "34": {
+          "heading": "District Commission jurisdiction",
+          "text": "Sets the District Commission's pecuniary and territorial jurisdiction, subject to the Act and applicable rules; territorial grounds include the complainant's residence or work for gain.",
+          "source": "Consumer Protection Act 2019, s.34",
+          "caveat": "Summary; pecuniary thresholds have been revised by rules. Check the current threshold and exact statutory text before filing."
+        },
+        "69": {
+          "heading": "Limitation period",
+          "text": "Provides a two-year limitation period for admitting a consumer complaint from the date the cause of action arises, with power to condone delay for sufficient cause recorded in writing.",
+          "source": "Consumer Protection Act 2019, s.69",
+          "caveat": "Summary only; assess accrual, exceptions and current procedure against the official Act."
         }
       },
       "known_max_section": 107
     },
     "constitution-in": {
       "short_name": "Constitution of India",
-      "aliases": ["the Constitution", "Constitution"],
+      "aliases": [
+        "the Constitution",
+        "Constitution"
+      ],
       "source": "https://www.indiacode.nic.in/handle/123456789/15240",
       "sections": {
         "14": {

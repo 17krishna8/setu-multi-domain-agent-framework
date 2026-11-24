@@ -1,18 +1,206 @@
 {
   "version": 1,
-  "description": "Minimal offline advisory database for cyber-dependency-scan. Keyed by ecosystem+package; ranges are half-open [introduced, fixed) in semver terms. Deliberately small and hand-checked — this is a teaching scaffold, NOT a CVE feed. Refresh from OSV.dev in production.",
+  "description": "Small offline subset, not a live OSV feed. Version ranges are simplified and may not capture package-specific backports or affected subranges; verify in OSV.dev before acting.",
   "advisories": [
-    {"id": "SETU-ADV-0001", "ecosystem": "npm", "package": "lodash", "introduced": "0.0.0", "fixed": "4.17.21", "severity": "high", "title": "Prototype pollution / command injection in template", "ref": "CVE-2021-23337"},
-    {"id": "SETU-ADV-0002", "ecosystem": "npm", "package": "minimist", "introduced": "0.0.0", "fixed": "1.2.6", "severity": "high", "title": "Prototype pollution via argv parsing", "ref": "CVE-2021-44906"},
-    {"id": "SETU-ADV-0003", "ecosystem": "npm", "package": "axios", "introduced": "0.0.0", "fixed": "1.6.0", "severity": "medium", "title": "SSRF via absolute URL in baseURL", "ref": "CVE-2023-45857"},
-    {"id": "SETU-ADV-0004", "ecosystem": "npm", "package": "jsonwebtoken", "introduced": "0.0.0", "fixed": "9.0.0", "severity": "critical", "title": "Verification bypass with key confusion", "ref": "CVE-2022-23529"},
-    {"id": "SETU-ADV-0005", "ecosystem": "npm", "package": "express", "introduced": "0.0.0", "fixed": "4.20.0", "severity": "medium", "title": "Open redirect in res.location", "ref": "CVE-2024-29041"},
-    {"id": "SETU-ADV-0006", "ecosystem": "npm", "package": "next", "introduced": "13.0.0", "fixed": "14.2.10", "severity": "high", "title": "Cache poisoning / SSRF in middleware rewrites", "ref": "CVE-2024-34351"},
-    {"id": "SETU-ADV-0007", "ecosystem": "pypi", "package": "requests", "introduced": "0.0.0", "fixed": "2.32.0", "severity": "medium", "title": "Proxy-Authorization header leak on redirect", "ref": "CVE-2024-35195"},
-    {"id": "SETU-ADV-0008", "ecosystem": "pypi", "package": "django", "introduced": "0.0.0", "fixed": "4.2.16", "severity": "high", "title": "ReDoS in URL validation", "ref": "CVE-2024-45230"},
-    {"id": "SETU-ADV-0009", "ecosystem": "pypi", "package": "pyyaml", "introduced": "0.0.0", "fixed": "5.4", "severity": "critical", "title": "Arbitrary code execution via full_load", "ref": "CVE-2020-14343"},
-    {"id": "SETU-ADV-0010", "ecosystem": "pypi", "package": "flask", "introduced": "0.0.0", "fixed": "3.0.3", "severity": "medium", "title": "Debugger PIN brute-force mitigation gap", "ref": "CVE-2024-34069"},
-    {"id": "SETU-ADV-0011", "ecosystem": "pypi", "package": "jinja2", "introduced": "0.0.0", "fixed": "3.1.5", "severity": "medium", "title": "Sandbox escape via attr filter chain", "ref": "CVE-2024-56201"},
-    {"id": "SETU-ADV-0012", "ecosystem": "npm", "package": "ejs", "introduced": "0.0.0", "fixed": "3.1.10", "severity": "critical", "title": "RCE via template injection in render options", "ref": "CVE-2024-33883"}
+    {
+      "id": "SETU-ADV-0001",
+      "ecosystem": "npm",
+      "package": "lodash",
+      "introduced": "0.0.0",
+      "fixed": "4.17.21",
+      "severity": "high",
+      "title": "Prototype pollution / command injection in template",
+      "ref": "CVE-2021-23337"
+    },
+    {
+      "id": "SETU-ADV-0002",
+      "ecosystem": "npm",
+      "package": "minimist",
+      "introduced": "0.0.0",
+      "fixed": "1.2.6",
+      "severity": "high",
+      "title": "Prototype pollution via argv parsing",
+      "ref": "CVE-2021-44906"
+    },
+    {
+      "id": "SETU-ADV-0003",
+      "ecosystem": "npm",
+      "package": "axios",
+      "introduced": "0.0.0",
+      "fixed": "1.6.0",
+      "severity": "medium",
+      "title": "SSRF via absolute URL in baseURL",
+      "ref": "CVE-2023-45857"
+    },
+    {
+      "id": "SETU-ADV-0004",
+      "ecosystem": "npm",
+      "package": "jsonwebtoken",
+      "introduced": "0.0.0",
+      "fixed": "9.0.0",
+      "severity": "critical",
+      "title": "Verification bypass with key confusion",
+      "ref": "CVE-2022-23529"
+    },
+    {
+      "id": "SETU-ADV-0005",
+      "ecosystem": "npm",
+      "package": "express",
+      "introduced": "0.0.0",
+      "fixed": "4.20.0",
+      "severity": "medium",
+      "title": "Open redirect in res.location",
+      "ref": "CVE-2024-29041"
+    },
+    {
+      "id": "SETU-ADV-0006",
+      "ecosystem": "npm",
+      "package": "next",
+      "introduced": "13.0.0",
+      "fixed": "14.2.10",
+      "severity": "high",
+      "title": "Cache poisoning / SSRF in middleware rewrites",
+      "ref": "CVE-2024-34351"
+    },
+    {
+      "id": "SETU-ADV-0007",
+      "ecosystem": "pypi",
+      "package": "requests",
+      "introduced": "0.0.0",
+      "fixed": "2.32.0",
+      "severity": "medium",
+      "title": "Proxy-Authorization header leak on redirect",
+      "ref": "CVE-2024-35195"
+    },
+    {
+      "id": "SETU-ADV-0008",
+      "ecosystem": "pypi",
+      "package": "django",
+      "introduced": "0.0.0",
+      "fixed": "4.2.16",
+      "severity": "high",
+      "title": "ReDoS in URL validation",
+      "ref": "CVE-2024-45230"
+    },
+    {
+      "id": "SETU-ADV-0009",
+      "ecosystem": "pypi",
+      "package": "pyyaml",
+      "introduced": "0.0.0",
+      "fixed": "5.4",
+      "severity": "critical",
+      "title": "Arbitrary code execution via full_load",
+      "ref": "CVE-2020-14343"
+    },
+    {
+      "id": "SETU-ADV-0010",
+      "ecosystem": "pypi",
+      "package": "flask",
+      "introduced": "0.0.0",
+      "fixed": "3.0.3",
+      "severity": "medium",
+      "title": "Debugger PIN brute-force mitigation gap",
+      "ref": "CVE-2024-34069"
+    },
+    {
+      "id": "SETU-ADV-0011",
+      "ecosystem": "pypi",
+      "package": "jinja2",
+      "introduced": "0.0.0",
+      "fixed": "3.1.5",
+      "severity": "medium",
+      "title": "Sandbox escape via attr filter chain",
+      "ref": "CVE-2024-56201"
+    },
+    {
+      "id": "SETU-ADV-0012",
+      "ecosystem": "npm",
+      "package": "ejs",
+      "introduced": "0.0.0",
+      "fixed": "3.1.10",
+      "severity": "critical",
+      "title": "RCE via template injection in render options",
+      "ref": "CVE-2024-33883"
+    },
+    {
+      "id": "SETU-ADV-0013",
+      "ecosystem": "npm",
+      "package": "word-wrap",
+      "introduced": "0.0.0",
+      "fixed": "1.2.4",
+      "severity": "high",
+      "title": "Regular expression denial of service",
+      "ref": "GHSA-j8xg-fqg3-53r7"
+    },
+    {
+      "id": "SETU-ADV-0014",
+      "ecosystem": "npm",
+      "package": "semver",
+      "introduced": "0.0.0",
+      "fixed": "7.5.2",
+      "severity": "high",
+      "title": "Regular expression denial of service",
+      "ref": "GHSA-c2qf-rxjj-qqgw"
+    },
+    {
+      "id": "SETU-ADV-0015",
+      "ecosystem": "npm",
+      "package": "json5",
+      "introduced": "0.0.0",
+      "fixed": "2.2.2",
+      "severity": "high",
+      "title": "Prototype pollution",
+      "ref": "GHSA-9c47-m6qq-7p4h"
+    },
+    {
+      "id": "SETU-ADV-0016",
+      "ecosystem": "npm",
+      "package": "node-forge",
+      "introduced": "0.0.0",
+      "fixed": "1.3.0",
+      "severity": "high",
+      "title": "Certificate chain validation weaknesses",
+      "ref": "GHSA-2r2c-g63r-vccr"
+    },
+    {
+      "id": "SETU-ADV-0017",
+      "ecosystem": "npm",
+      "package": "ip",
+      "introduced": "0.0.0",
+      "fixed": "1.1.9",
+      "severity": "high",
+      "title": "Incorrect classification of special-purpose IP addresses",
+      "ref": "GHSA-78xj-cgh5-2h22"
+    },
+    {
+      "id": "SETU-ADV-0018",
+      "ecosystem": "pypi",
+      "package": "urllib3",
+      "introduced": "0.0.0",
+      "fixed": "1.26.19",
+      "severity": "medium",
+      "title": "Proxy-Authorization header not stripped on cross-origin redirects",
+      "ref": "GHSA-34jh-p97f-mpxf"
+    },
+    {
+      "id": "SETU-ADV-0019",
+      "ecosystem": "pypi",
+      "package": "setuptools",
+      "introduced": "0.0.0",
+      "fixed": "70.0.0",
+      "severity": "high",
+      "title": "Command injection via package URL",
+      "ref": "GHSA-cx63-2mw6-8hw5"
+    },
+    {
+      "id": "SETU-ADV-0020",
+      "ecosystem": "pypi",
+      "package": "cryptography",
+      "introduced": "0.0.0",
+      "fixed": "42.0.0",
+      "severity": "high",
+      "title": "Bleichenbacher timing oracle in RSA PKCS#1 v1.5 decryption",
+      "ref": "GHSA-3ww4-gg4f-jr7f"
+    }
   ]
 }
