@@ -221,9 +221,16 @@ image → agri-classify ── label + confidence (or "unidentified"; never inve
       → agri-localize ─── 13 Indian languages, product names and numbers preserved
 ```
 
-Both model-shaped steps take a **callable**, so a real pretrained classifier or
-translator drops in without touching the pack. With nothing wired in, both are
-honest: `unidentified` at confidence 0.0, and an explicit `translated: false`.
+Agri includes an opt-in **plant-content validation gate** backed by the pinned
+Apache-2.0 Kindwise `router.tiny` model. Install `requirements-agri-image.txt`
+and run `python scripts/agri.py classify --image leaf.jpg --crop tomato
+--validate-plant`; model weights are fetched only when that explicit flag is
+used. The gate blocks classification when validation fails; it does not diagnose
+disease, and is a router rather than a calibrated field diagnostic. Disease
+classification remains a separate concern. Without the flag, legacy code callers
+retain compatibility; upload workflows that accept untrusted user files should
+explicitly require validation before classification or treatment. Translation
+remains callable-backed and reports untranslated text honestly when unavailable.
 
 Verified boundary: `0.599 → treatment_allowed: false`, `0.60 → true`. Two *distinct*
 refusal paths — low confidence (`uncertain`) and a confident label outside the

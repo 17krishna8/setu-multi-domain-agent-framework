@@ -1,0 +1,5 @@
+# Optional pinned plant-content gate. Core Setu remains dependency-free.
+Pillow>=10.0,<13
+huggingface_hub>=0.27,<2
+numpy>=1.26,<3
+torch>=2.2

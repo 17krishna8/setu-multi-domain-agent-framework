@@ -175,7 +175,7 @@ def _heuristic_classify(image_path: str, crop: str | None) -> dict:
 
 
 def classify(image_path: str, crop: str | None = None,
-             classifier=None) -> dict:
+             classifier=None, image_validator=None) -> dict:
     """Classify a leaf/fruit image.
 
     ``classifier`` is any callable ``(image_path, crop) -> dict`` returning::
@@ -185,6 +185,19 @@ def classify(image_path: str, crop: str | None = None,
     so a real pretrained model (a torchvision fine-tune, a TFLite plant-disease
     model, a hosted vision API) plugs in without touching this file.
     """
+    if image_validator is not None:
+        try:
+            validation = image_validator(image_path)
+        except Exception as e:  # noqa: BLE001 — validator failure must fail closed
+            return {"check": "agri-classify", "status": "image-validation-error",
+                    "reason": str(e), "confidence": 0.0, "treatment_allowed": False}
+        if not isinstance(validation, dict) or validation.get("plant_image") is not True:
+            reason = (validation.get("reason", "image was not validated as plant content")
+                      if isinstance(validation, dict) else "validator returned an invalid result")
+            return {"check": "agri-classify", "status": "invalid-image",
+                    "reason": reason, "confidence": 0.0, "treatment_allowed": False,
+                    "image_validation": validation}
+
     if classifier is not None:
         try:
             raw = classifier(image_path, crop)
@@ -454,6 +467,8 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("classify")
     c.add_argument("--image", required=True)
     c.add_argument("--crop", default=None)
+    c.add_argument("--validate-plant", action="store_true",
+                    help="require the optional plant-content model before classifying")
 
     t = sub.add_parser("treat", help="treat a classification JSON file")
     t.add_argument("--classification", required=True)
@@ -466,8 +481,22 @@ def main(argv: list[str] | None = None) -> int:
 
     a = ap.parse_args(argv)
     if a.cmd == "classify":
-        print(json.dumps(classify(a.image, a.crop), indent=2))
-        return 0
+        classifier = None
+        image_validator = None
+        if a.validate_plant:
+            try:
+                from agri_image import load_plant_validator
+                image_validator = load_plant_validator()
+            except Exception as e:  # noqa: BLE001 — fail closed, do not classify without gate
+                print(json.dumps({"check": "agri-classify", "status": "unavailable",
+                                  "reason": str(e), "confidence": 0.0,
+                                  "treatment_allowed": False}, indent=2))
+                return 2
+        result = classify(a.image, a.crop, classifier=classifier,
+                          image_validator=image_validator)
+        print(json.dumps(result, indent=2))
+        return 0 if result.get("status") not in {"invalid-image", "image-validation-error",
+                                                  "unavailable"} else 2
     if a.cmd == "treat":
         data = json.loads(Path(a.classification).read_text(encoding="utf-8"))
         res = treat(data)
