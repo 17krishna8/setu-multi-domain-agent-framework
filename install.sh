@@ -85,8 +85,11 @@ case "$TARGET" in
   cursor) ROOT="${CURSOR_HOME:-$PWD/.cursor}" ;;
   codex)  ROOT="${CODEX_HOME:-$PWD}" ;;
 esac
-mkdir -p "$ROOT"
-ROOT="$(cd "$ROOT" && pwd)"
+ROOT="$("$PY" -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$ROOT")"
+if [[ "$DRY_RUN" != "1" ]]; then
+  mkdir -p "$ROOT"
+  ROOT="$(cd "$ROOT" && pwd)"
+fi
 
 MANIFEST="$(mktemp)"     # files we created and own
 SHARED="$(mktemp)"       # files we edited in place (AGENTS.md)
@@ -100,7 +103,7 @@ run() { if [[ "$DRY_RUN" == "1" ]]; then say "  would: $*"; else "$@"; fi; }
 # Copy one file, record its absolute destination.
 copy_file() {
   local src="$1" dst="$2"
-  mkdir -p "$(dirname "$dst")"
+  if [[ "$DRY_RUN" != "1" ]]; then mkdir -p "$(dirname "$dst")"; fi
   if [[ -e "$dst" && "$FORCE" != "1" ]]; then
     if cmp -s "$src" "$dst"; then
       say "  = $(basename "$dst") (unchanged)"

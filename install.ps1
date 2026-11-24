@@ -94,8 +94,12 @@ $Root = switch ($Target) {
   'cursor' { if ($env:CURSOR_HOME) { $env:CURSOR_HOME } else { Join-Path (Get-Location) '.cursor' } }
   'codex'  { if ($env:CODEX_HOME)  { $env:CODEX_HOME }  else { (Get-Location).Path } }
 }
-if (-not (Test-Path $Root)) { New-Item -ItemType Directory -Path $Root -Force | Out-Null }
-$Root = (Resolve-Path $Root).Path
+if ($DryRun) {
+  $Root = [System.IO.Path]::GetFullPath($Root)
+} else {
+  if (-not (Test-Path $Root)) { New-Item -ItemType Directory -Path $Root -Force | Out-Null }
+  $Root = (Resolve-Path $Root).Path
+}
 
 $Manifest = New-TemporaryFile
 $Shared   = New-TemporaryFile
@@ -109,7 +113,9 @@ Say ''
 function Copy-SetuFile {
   param([string]$Src, [string]$Dest)
   $dir = Split-Path -Parent $Dest
-  if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+  if (-not $DryRun -and -not (Test-Path $dir)) {
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  }
   if ((Test-Path $Dest) -and (-not $Force)) {
     $same = (Get-FileHash $Src).Hash -eq (Get-FileHash $Dest).Hash
     if ($same) {
