@@ -391,9 +391,9 @@ def selftest() -> dict:
     # agri: confidence gate
     def agri_gate():
         import agri
-        low = agri.treat({"label": "Early blight", "confidence": 0.42,
+        low = agri.treat({"label": "Early blight", "crop": "tomato", "confidence": 0.42,
                           "treatment_allowed": True})
-        high = agri.treat({"label": "Early blight", "confidence": 0.9,
+        high = agri.treat({"label": "Early blight", "crop": "tomato", "confidence": 0.9,
                            "treatment_allowed": True})
         ok = (low["status"] == "uncertain" and low["remedies"] == []
               and high["status"] == "ok" and len(high["remedies"]) > 0)
