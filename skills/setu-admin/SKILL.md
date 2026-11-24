@@ -67,11 +67,13 @@ None of these says "fabricated". Each says "a human must check this".
 ### 3. Never auto-finalize
 
 `admin_finalize` refuses unless a human confirmation flag **and** a name are
-supplied, all `[[NEEDS: …]]` markers are filled, verify-law is not `BLOCK`, and
-format is not `FAIL`. There is no bypass, by design:
+supplied, all `[[NEEDS: …]]` markers are filled, and its own fresh verify-law and
+format checks pass. Caller-supplied reports are not trusted as substitutes for
+rechecking the text. Use `--type` to select the document type for the format
+check. There is no bypass, by design:
 
 ```bash
-python3 scripts/admin_docs.py finalize --text drafts/rti.md \
+python3 scripts/admin_docs.py finalize --text drafts/rti.md --type rti \
     --confirmed-by "Asha Rao" --yes --out final/rti-2026-11-22.md
 ```
 

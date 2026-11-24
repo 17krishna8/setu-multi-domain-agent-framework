@@ -558,19 +558,25 @@ FINALIZE_BANNER = ("---\n_STATUS: FINAL — human-confirmed on {when} by {who}. 
 
 def admin_finalize(text: str, confirmed_by: str | None, confirmed: bool,
                    when: str | None = None, law_report: dict | None = None,
-                   format_report: dict | None = None) -> dict:
-    """Mark a draft final. Refuses without an explicit human confirmation.
+                   format_report: dict | None = None,
+                   doc_type: str = "general") -> dict:
+    """Mark a draft final only after human confirmation and in-function checks.
 
-    There is no code path from draft to final that a model can take on its own.
+    Recompute checks from ``text`` instead of trusting optional caller-supplied
+    reports, which can be stale or forged. No model can skip this gate.
     """
     reasons = []
     if not confirmed:
         reasons.append("no human confirmation flag was supplied")
     if not confirmed_by or not str(confirmed_by).strip():
         reasons.append("confirmed_by must name the human who reviewed it")
-    if law_report and law_report.get("verdict") == "BLOCK":
+    actual_law_report = verify_law(text)
+    actual_format_report = check_format(text, doc_type)
+    if actual_law_report.get("verdict") == "BLOCK" or \
+            (law_report and law_report.get("verdict") == "BLOCK"):
         reasons.append("admin-verify-law returned BLOCK — unresolved citation problems")
-    if format_report and format_report.get("verdict") == "FAIL":
+    if actual_format_report.get("verdict") == "FAIL" or \
+            (format_report and format_report.get("verdict") == "FAIL"):
         reasons.append("admin-format returned FAIL — mechanical requirements unmet")
     unfilled = re.findall(r"\[\[NEEDS:([^\]]+)\]\]", text)
     if unfilled:
@@ -621,6 +627,8 @@ def main(argv: list[str] | None = None) -> int:
     fi.add_argument("--text", required=True)
     fi.add_argument("--confirmed-by", default=None)
     fi.add_argument("--yes", action="store_true")
+    fi.add_argument("--type", default="general", choices=sorted(FORMAT_RULES),
+                    help="document type for the required format check")
     fi.add_argument("--out", default=None)
 
     a = ap.parse_args(argv)
@@ -662,7 +670,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if res["pass"] else 1
     if a.cmd == "finalize":
         text = read(a.text)
-        res = admin_finalize(text, a.confirmed_by, a.yes)
+        res = admin_finalize(text, a.confirmed_by, a.yes, doc_type=a.type)
         if a.out and res["finalized"]:
             Path(a.out).write_text(res["text"], encoding="utf-8")
         print(json.dumps({k: v for k, v in res.items() if k != "text"}, indent=2))
