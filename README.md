@@ -3,11 +3,11 @@
 **सेतु** — *bridge.*
 
 A multi-domain agentic framework for Claude Code, Cursor and Codex. One router,
-five domain packs, 34 sub-agents, and a shared memory layer that makes every pack
+six domain packs, 35 sub-agents, and a shared memory layer that makes every pack
 slightly better at the thing you keep asking it to do.
 
 ```bash
-./install.sh                                   # Claude Code, all five packs
+./install.sh                                   # Claude Code, all six packs
 ./install.sh --target cursor                   # .cursor/rules/
 ./install.sh --target codex                    # writes a managed block in AGENTS.md
 ./install.sh --profile minimal --domains cyber,finance
@@ -19,7 +19,7 @@ slightly better at the thing you keep asking it to do.
 ## Why this exists
 
 Most agent frameworks give you one clever assistant that is mediocre at
-everything. Setu gives you five narrow packs with different failure modes, each
+everything. Setu gives you six focused packs with different failure modes, each
 with a gate that stops it doing the expensive kind of wrong:
 
 | Pack | Gate that actually blocks |
@@ -29,10 +29,11 @@ with a gate that stops it doing the expensive kind of wrong:
 | **admin** | never marks a document final — a named human must confirm |
 | **finance** | never lets a language model produce a number; EMI maths is Python only |
 | **agri** | no treatment advice below 0.6 classification confidence |
+| **education** | study planning is deterministic; the coach supports learning rather than completing graded work |
 
 Those gates are in **code**, not in prose. A rule that lives only in a prompt gets
 rationalised away on the third retry; a rule that lives in a function returns a
-refusal. `python3 scripts/setu.py selftest` asserts all ten of them still hold.
+refusal. `python3 scripts/setu.py selftest` asserts the code-enforced gates still hold.
 
 ---
 
@@ -45,14 +46,14 @@ refusal. `python3 scripts/setu.py selftest` asserts all ten of them still hold.
                     └─────────────┬────────────┘
                                   │
       ┌──────────┬────────────────┼────────────────┬──────────┐
-      ▼          ▼                ▼                ▼          ▼
-  ┌───────┐  ┌───────┐        ┌───────┐        ┌───────┐  ┌───────┐
-  │ CYBER │  │WEBDEV │        │ AGRI  │        │ ADMIN │  │FINANCE│
-  │ 20    │  │ 5     │        │ 3     │        │ 3     │  │ 3     │
-  │agents │  │agents │        │agents │        │agents │  │agents │
-  └───┬───┘  └───┬───┘        └───┬───┘        └───┬───┘  └───┬───┘
-      │          │                │                │          │
-      └──────────┴────────────────┴────────────────┴──────────┘
+      ▼          ▼                ▼                ▼          ▼          ▼
+  ┌───────┐  ┌───────┐        ┌───────┐        ┌───────┐  ┌───────┐  ┌─────────┐
+  │ CYBER │  │WEBDEV │        │ AGRI  │        │ ADMIN │  │FINANCE│  │EDUCATION│
+  │ 20    │  │ 5     │        │ 3     │        │ 3     │  │ 3     │  │ 1       │
+  │agents │  │agents │        │agents │        │agents │  │agents │  │ agents  │
+  └───┬───┘  └───┬───┘        └───┬───┘        └───┬───┘  └───┬───┘  └────┬────┘
+      │          │                │                │          │           │
+      └──────────┴────────────────┴────────────────┴──────────┴───────────┘
                                   │
                                   ▼
                     ┌──────────────────────────┐
@@ -81,11 +82,11 @@ Three things are genuinely shared, not copied per pack:
 3. **`model_wrapper.py`** — agent frontmatter says `model: haiku` / `model: opus`
    (a *tier*, not a vendor model). `resolve_model` maps the tier onto whatever
    `SETU_MODEL` selects, so the token-spend design survives a switch to GPT or a
-   local Ollama model without touching 34 files.
+   local Ollama model without touching the agent files.
 
 ---
 
-## The five packs
+## The six packs
 
 ### 1 · Cyber — 20 agents
 
@@ -285,6 +286,26 @@ text = call_model("summarise these findings", model="claude")
 
 ---
 
+### 6 · Education — study planning and learner coaching
+
+```text
+request → education-study-coach ── questions, explanations, and original practice
+study inputs → education.py ─────── deterministic learning sessions + 1/3/7-day reviews
+```
+
+The study planner accepts topics, a start date, exam date, and daily time budget. It
+keeps the exam date free, optionally skips weekends, and lists any topics or reviews it
+cannot fit. It does not claim that completing scheduled sessions proves mastery. The
+skill instructions also set a firm academic-integrity boundary: coach, explain, or give
+feedback, but never complete graded work for the learner.
+
+```bash
+python3 scripts/education.py plan \
+  --topics "fractions,decimals,word problems" \
+  --start-date 2026-06-01 --exam-date 2026-06-15 \
+  --minutes-per-day 90
+```
+
 ## Install & uninstall
 
 ```bash
@@ -342,12 +363,12 @@ $ python3 scripts/setu.py selftest
   [PASS] finance: model cannot compute numbers
   [PASS] memory: log and retrieve
 
-10/10 gates hold
+11/11 gates hold
 ```
 
 ```bash
 $ python3 -m pytest tests/ -q
-25 passed
+103 passed
 ```
 
 Gates for packs you did not install are reported `SKIP`, not `FAIL`.
@@ -367,13 +388,15 @@ setu/
 │   ├── setu-webdev/SKILL.md         # build path + fix path + provenance note
 │   ├── setu-agri/SKILL.md           # 0.6 confidence gate
 │   ├── setu-admin/SKILL.md          # verbatim citation + human gate
-│   └── setu-finance/SKILL.md        # deterministic maths + disclaimer
-├── agents/                          # 34 sub-agents, one .md each
+│   ├── setu-finance/SKILL.md        # deterministic maths + disclaimer
+│   └── setu-education/SKILL.md     # study planning + learning boundaries
+├── agents/                          # 35 sub-agents, one .md each
 │   ├── cyber-*.md                   #  20
 │   ├── webdev-*.md                  #   5
 │   ├── agri-*.md                    #   3
 │   ├── admin-*.md                   #   3
-│   └── finance-*.md                 #   3
+│   ├── finance-*.md                 #   3
+│   └── education-study-coach.md     #   1
 ├── scripts/
 │   ├── memory.py                    # feedback log + few-shot retrieval
 │   ├── model_wrapper.py             # call_model(): claude · gpt · ollama
@@ -394,13 +417,15 @@ setu/
 │   ├── webdev_fix.py                # diagnose → apply → verify → revert
 │   ├── admin_docs.py                # draft · verify-law · format · finalize
 │   ├── finance.py                   # EMI (Decimal) · categorize · scam-check
+│   ├── education.py                 # deterministic study plan + spaced reviews
 │   ├── agri.py                      # classify · treat (0.6 gate) · localize
 │   └── install_state.py             # owned-vs-shared ledger for exact uninstall
 ├── examples/webdev/grain-store.html # a page that passes the design critic (100)
 ├── tests/
 │   ├── fixture_server.py            # deliberately vulnerable local target
 │   ├── test_finance.py              # 12 tests, incl. closed-form EMI cross-checks
-│   └── test_agri.py                 # 13 tests, incl. the 0.599/0.60 boundary
+│   ├── test_agri.py                 # 13 tests, incl. the 0.599/0.60 boundary
+│   └── test_education.py            # schedule, budget, CLI, and routing tests
 ├── install.sh
 ├── install.ps1
 └── README.md

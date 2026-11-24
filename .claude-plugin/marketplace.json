@@ -4,19 +4,19 @@
     "name": "Setu Contributors"
   },
   "metadata": {
-    "description": "Setu — the multi-domain agentic framework. One router, five domain packs, one shared memory layer.",
+    "description": "Setu — the multi-domain agentic framework. One router, six domain packs, one shared memory layer.",
     "version": "0.1.0"
   },
   "plugins": [
     {
       "name": "setu",
       "source": "./",
-      "description": "Multi-domain agentic framework with 5 domain orchestrators, 34 sub-agents, and a local self-learning memory layer.",
+      "description": "Multi-domain agentic framework with 6 domain packs, 35 sub-agents, and a local self-learning memory layer.",
       "version": "0.1.0",
       "license": "MIT",
-      "keywords": ["multi-domain", "agents", "security", "webdev", "finance", "legal", "agriculture"],
+      "keywords": ["multi-domain", "agents", "security", "webdev", "finance", "legal", "agriculture","education"],
       "category": "productivity",
-      "tags": ["orchestration", "self-learning", "offline-friendly"]
+      "tags": ["orchestration", "self-learning", "offline-friendly","study-planning"]
     }
   ]
 }
