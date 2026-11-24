@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -198,6 +199,8 @@ def classify(image_path: str, crop: str | None = None,
             conf = 0.0
         conf = max(0.0, min(conf, 1.0))
         kb_key = _kb_lookup(label, crop)
+        effective_crop = crop or raw.get("crop")
+        crop_ok = bool(kb_key and _crop_compatible(kb_key, effective_crop))
         return {
             "check": "agri-classify",
             "status": "classified",
@@ -207,11 +210,13 @@ def classify(image_path: str, crop: str | None = None,
             "kb_key": kb_key,
             "confidence": round(conf, 3),
             "alternatives": raw.get("alternatives", [])[:3],
-            "treatment_allowed": conf >= CONFIDENCE_THRESHOLD and kb_key is not None,
+            "treatment_allowed": (conf >= CONFIDENCE_THRESHOLD and crop_ok),
             "threshold": CONFIDENCE_THRESHOLD,
             "gate_note": (f"below {CONFIDENCE_THRESHOLD}: no remedy will be offered"
                           if conf < CONFIDENCE_THRESHOLD else
-                          "above threshold: treatment advice permitted"),
+                          "crop missing or incompatible: no remedy will be offered"
+                          if not crop_ok else
+                          "above threshold and crop compatible: treatment advice permitted"),
         }
     base = _heuristic_classify(image_path, crop)
     # Every classification result must carry the same keys, whatever path it took,
@@ -246,6 +251,17 @@ def _kb_lookup(label: str, crop: str | None = None) -> str | None:
         if alias in norm:
             return key
     return None
+
+
+def _crop_compatible(kb_key: str, crop: str | None) -> bool:
+    """Check explicit crop restrictions before allowing knowledge-base remedies."""
+    crop_scope = KNOWLEDGE_BASE.get(kb_key, {}).get("crop", "")
+    allowed = {"tomato/potato": {"tomato", "tomatoes", "potato", "potatoes"}}
+    restricted_crops = allowed.get(crop_scope)
+    if restricted_crops is None:
+        return True
+    crop_name = re.sub(r"[^a-z0-9]+", "-", str(crop or "").strip().lower()).strip("-")
+    return crop_name in restricted_crops
 
 
 def treat(classification: dict) -> dict:
@@ -293,8 +309,30 @@ def treat(classification: dict) -> dict:
             "disclaimer": common.DISCLAIMERS["agri"],
         }
 
-    kb_key = classification.get("kb_key") or _kb_lookup(label, crop)
+    label_kb_key = _kb_lookup(label, crop)
+    supplied_kb_key = classification.get("kb_key")
+    kb_key = (label_kb_key if supplied_kb_key in (None, label_kb_key) else None)
     entry = KNOWLEDGE_BASE.get(kb_key or "")
+    if entry and not _crop_compatible(kb_key, crop):
+        return {
+            "check": "agri-treat",
+            "status": "crop-mismatch",
+            "confidence": conf,
+            "label": label,
+            "crop": crop,
+            "kb_key": kb_key,
+            "remedies": [],
+            "headline": "Crop does not match the treatment guidance.",
+            "explanation": (f"The local guidance for '{label}' applies to "
+                            f"{entry['crop']}, not the supplied crop '{crop}'. "
+                            "No treatment is recommended."),
+            "next_steps": [
+                "Confirm the crop and diagnosis with your local agriculture extension officer or KVK.",
+                "Do not apply a crop-specific pesticide based on this result.",
+            ],
+            "disclaimer": common.DISCLAIMERS["agri"],
+        }
+
     if not entry:
         return {
             "check": "agri-treat",
