@@ -151,7 +151,7 @@ declare -A DOMAIN_SCRIPTS=(
   [webdev]="design_check.py webdev_fix.py"
   [admin]="admin_docs.py"
   [finance]="finance.py"
-  [agri]="agri.py"
+  [agri]="agri.py agri_model.py"
   [education]="education.py"
 )
 declare -A DOMAIN_RULES=(

@@ -198,14 +198,21 @@ def classify(image_path: str, crop: str | None = None,
         except (TypeError, ValueError):
             conf = 0.0
         conf = max(0.0, min(conf, 1.0))
-        kb_key = _kb_lookup(label, crop)
-        effective_crop = crop or raw.get("crop")
-        crop_ok = bool(kb_key and _crop_compatible(kb_key, effective_crop))
+        model_crop = raw.get("crop")
+        effective_crop = model_crop or crop
+        kb_key = _kb_lookup(label, effective_crop)
+        crop_conflict = bool(crop and model_crop and
+                             re.sub(r"[^a-z0-9]+", "-", crop.lower()).strip("-") !=
+                             re.sub(r"[^a-z0-9]+", "-", str(model_crop).lower()).strip("-"))
+        crop_ok = bool(kb_key and not crop_conflict and
+                       _crop_compatible(kb_key, effective_crop))
         return {
             "check": "agri-classify",
             "status": "classified",
             "source": "pretrained-classifier",
-            "crop": crop or raw.get("crop") or "unknown",
+            "crop": effective_crop or "unknown",
+            "predicted_crop": model_crop,
+            "crop_mismatch": crop_conflict,
             "label": label,
             "kb_key": kb_key,
             "confidence": round(conf, 3),
@@ -276,6 +283,24 @@ def treat(classification: dict) -> dict:
     conf = float(classification.get("confidence", 0.0) or 0.0)
     label = classification.get("label") or "unknown"
     crop = classification.get("crop") or "unknown"
+
+    if classification.get("crop_mismatch"):
+        return {
+            "check": "agri-treat",
+            "status": "crop-mismatch",
+            "confidence": conf,
+            "label": label,
+            "crop": crop,
+            "predicted_crop": classification.get("predicted_crop"),
+            "remedies": [],
+            "headline": "The image model's crop prediction conflicts with the supplied crop.",
+            "explanation": (f"The supplied crop '{crop}' does not match the image model's "
+                            f"predicted crop '{classification.get('predicted_crop')}'. "
+                            "No treatment is recommended."),
+            "next_steps": ["Confirm the crop and diagnosis with your local agriculture "
+                           "extension officer or KVK."],
+            "disclaimer": common.DISCLAIMERS["agri"],
+        }
 
     # Two independent reasons not to advise, and they must not be conflated:
     #   * low confidence   -> we do not know WHAT this is      -> "uncertain"
@@ -454,6 +479,8 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("classify")
     c.add_argument("--image", required=True)
     c.add_argument("--crop", default=None)
+    c.add_argument("--pretrained", action="store_true",
+                    help="load the optional pinned MobileNetV2 PlantVillage classifier")
 
     t = sub.add_parser("treat", help="treat a classification JSON file")
     t.add_argument("--classification", required=True)
@@ -466,7 +493,17 @@ def main(argv: list[str] | None = None) -> int:
 
     a = ap.parse_args(argv)
     if a.cmd == "classify":
-        print(json.dumps(classify(a.image, a.crop), indent=2))
+        classifier = None
+        if a.pretrained:
+            try:
+                from agri_model import load_classifier
+                classifier = load_classifier()
+            except Exception as e:  # noqa: BLE001 — return an explicit unavailable state
+                print(json.dumps({"check": "agri-classify", "status": "unavailable",
+                                  "reason": str(e), "confidence": 0.0,
+                                  "treatment_allowed": False}, indent=2))
+                return 2
+        print(json.dumps(classify(a.image, a.crop, classifier=classifier), indent=2))
         return 0
     if a.cmd == "treat":
         data = json.loads(Path(a.classification).read_text(encoding="utf-8"))

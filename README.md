@@ -221,9 +221,14 @@ image → agri-classify ── label + confidence (or "unidentified"; never inve
       → agri-localize ─── 13 Indian languages, product names and numbers preserved
 ```
 
-Both model-shaped steps take a **callable**, so a real pretrained classifier or
-translator drops in without touching the pack. With nothing wired in, both are
-honest: `unidentified` at confidence 0.0, and an explicit `translated: false`.
+The classifier has an opt-in local MobileNetV2 adapter for 38 PlantVillage-style
+classes (`scripts/agri_model.py`). Install `requirements-agri-model.txt` and use
+`--pretrained` to load its pinned Apache-2.0 Hugging Face checkpoint. Model weights
+are not downloaded on normal imports or by the base installer. The training images
+are controlled-background PlantVillage data; farm-field performance and confidence
+calibration are not established by Setu. The 0.6 treatment gate still applies,
+and labels without locally validated guidance get no remedies. Translation remains
+callable-backed; without a translator it reports untranslated text honestly.
 
 Verified boundary: `0.599 → treatment_allowed: false`, `0.60 → true`. Two *distinct*
 refusal paths — low confidence (`uncertain`) and a confident label outside the
@@ -419,6 +424,7 @@ setu/
 │   ├── finance.py                   # EMI (Decimal) · categorize · scam-check
 │   ├── education.py                 # deterministic study plan + spaced reviews
 │   ├── agri.py                      # classify · treat (0.6 gate) · localize
+│   ├── agri_model.py                # optional pinned MobileNetV2 PlantVillage adapter
 │   └── install_state.py             # owned-vs-shared ledger for exact uninstall
 ├── examples/webdev/grain-store.html # a page that passes the design critic (100)
 ├── tests/
