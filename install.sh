@@ -85,10 +85,11 @@ case "$TARGET" in
   cursor) ROOT="${CURSOR_HOME:-$PWD/.cursor}" ;;
   codex)  ROOT="${CODEX_HOME:-$PWD}" ;;
 esac
-ROOT="$("$PY" -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$ROOT")"
+# Resolve with Python, not `cd && pwd`: on Git Bash `pwd` returns /c/... or /tmp/...,
+# which Windows Python then reads as C:\\c\\... or C:\\tmp\\..., so uninstall found nothing.
+ROOT="$("$PY" -c 'import os, sys; print(os.path.abspath(sys.argv[1]).replace(os.sep, "/"))' "$ROOT")"
 if [[ "$DRY_RUN" != "1" ]]; then
   mkdir -p "$ROOT"
-  ROOT="$(cd "$ROOT" && pwd)"
 fi
 
 MANIFEST="$(mktemp)"     # files we created and own
@@ -111,7 +112,11 @@ copy_file() {
       return
     fi
     say "  ! $(basename "$dst") exists and differs; backing up to $(basename "$dst").setu-bak"
-    run cp -p "$dst" "$dst.setu-bak"
+    if [[ -e "$dst.setu-bak" ]]; then
+      say "  = keeping existing user backup (will not overwrite it)"
+    else
+      run cp -p "$dst" "$dst.setu-bak"
+    fi
     echo "$dst.setu-bak" >> "$MANIFEST"
   fi
   run cp -p "$src" "$dst"
@@ -225,7 +230,9 @@ EOF
     if [[ "$DRY_RUN" == "1" ]]; then
       say "  would replace the managed block"
     else
-      cp -p "$agents_md" "$agents_md.setu-bak"
+      if [[ ! -e "$agents_md.setu-bak" ]]; then
+        cp -p "$agents_md" "$agents_md.setu-bak"
+      fi
       echo "$agents_md" >> "$SHARED"
       # Replace only the text between the markers, using Python so multi-line
       # replacement does not depend on sed's dialect.
@@ -246,7 +253,9 @@ PYEOF
     if [[ "$DRY_RUN" == "1" ]]; then
       say "  would append the managed block"
     else
-      cp -p "$agents_md" "$agents_md.setu-bak"
+      if [[ ! -e "$agents_md.setu-bak" ]]; then
+        cp -p "$agents_md" "$agents_md.setu-bak"
+      fi
       echo "$agents_md" >> "$SHARED"
       printf '\n\n%s\n' "$body" >> "$agents_md"
     fi
