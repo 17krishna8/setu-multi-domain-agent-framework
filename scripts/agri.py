@@ -119,6 +119,66 @@ KNOWLEDGE_BASE = {
         ],
         "urgency": "manageable",
     },
+    "downy-mildew": {
+        "crop": "wide host range (verify host-specific diagnosis)",
+        "cause": "oomycete (host-specific species)",
+        "signs": "angular yellow patches bounded by veins; grey-purple growth beneath leaves in humid conditions",
+        "remedies": [
+            "Photograph both leaf surfaces and confirm the crop; nutrient problems and other leaf spots can look similar.",
+            "Remove heavily affected leaves when plants are dry and dispose of them away from the field.",
+            "Reduce leaf wetness, improve airflow, and avoid moving through wet foliage.",
+            "Ask a local extension officer to confirm the host-specific disease and any locally registered control before spraying.",
+        ],
+        "urgency": "seek confirmation promptly if lesions spread after wet weather",
+    },
+    "bacterial-wilt": {
+        "crop": "wide host range (verify host-specific diagnosis)",
+        "cause": "bacterial; several unrelated pathogens can cause wilt",
+        "signs": "rapid wilt despite moist soil; vascular browning or bacterial streaming may occur but is not conclusive",
+        "remedies": [
+            "Do not assume drought: check soil moisture and compare affected and healthy plants.",
+            "Avoid moving soil, tools, or irrigation water from affected plants to healthy beds.",
+            "Remove severely affected plants with roots only after documenting symptoms; do not compost them.",
+            "Request a local diagnostic confirmation; there is no reliable curative spray recommendation from symptoms alone.",
+        ],
+        "urgency": "prompt confirmation; soil-borne wilt can spread between plants",
+    },
+    "mosaic-virus": {
+        "crop": "wide host range (verify host-specific diagnosis)",
+        "cause": "viral; symptoms may also be caused by herbicide injury or nutrient stress",
+        "signs": "mottled light/dark green pattern, leaf distortion, or stunting; visual symptoms alone are not diagnostic",
+        "remedies": [
+            "Do not use seed or cuttings from symptomatic plants until the cause is confirmed.",
+            "Clean tools between plants and avoid handling healthy plants after affected plants.",
+            "Check for aphids, whiteflies, or other vectors, but do not infer virus from their presence alone.",
+            "Seek local confirmation; fungicides do not cure viral disease and vector control must be crop-specific.",
+        ],
+        "urgency": "confirm before selecting control measures",
+    },
+    "whiteflies": {
+        "crop": "wide host range",
+        "cause": "insect (Aleyrodidae); some species transmit plant viruses",
+        "signs": "tiny white adults rise from leaf undersides when disturbed; nymphs and honeydew beneath leaves",
+        "remedies": [
+            "Inspect leaf undersides and use yellow cards to monitor adults rather than diagnose from leaf yellowing alone.",
+            "Remove heavily infested leaves where practical and control weeds that host the pest.",
+            "Conserve natural enemies; avoid broad-spectrum sprays that can trigger pest resurgence.",
+            "For persistent crop damage, consult local extension guidance and use only a product registered for the crop and pest.",
+        ],
+        "urgency": "monitor; act if populations or plant damage increase",
+    },
+    "spider-mites": {
+        "crop": "wide host range",
+        "cause": "mite (Tetranychidae), favoured by hot, dry conditions",
+        "signs": "fine pale stippling, bronzing, and possible fine webbing, especially on leaf undersides",
+        "remedies": [
+            "Confirm mites with a hand lens on the underside of leaves; drought stress can look similar.",
+            "Reduce dust and avoid water stress; a gentle water wash can reduce mites on sturdy plants.",
+            "Preserve predatory mites and other natural enemies; avoid unnecessary broad-spectrum insecticides.",
+            "If damage continues, ask local extension staff about a crop-registered miticide and label precautions.",
+        ],
+        "urgency": "monitor closely in hot, dry weather",
+    },
     "nutrient-deficiency-nitrogen": {
         "crop": "wide host range",
         "cause": "abiotic (not a pathogen)",
@@ -264,7 +324,10 @@ def _kb_lookup(label: str, crop: str | None = None) -> str | None:
     aliases = {
         "alternaria": "early-blight", "phytophthora": "late-blight",
         "mildew": "powdery-mildew", "aphid": "aphids", "septoria": "leaf-spot",
-        "bacterial-spot": "leaf-spot", "nitrogen-deficiency": "nutrient-deficiency-nitrogen",
+        "bacterial-spot": "leaf-spot", "downy-mildew": "downy-mildew",
+        "bacterial-wilt": "bacterial-wilt", "mosaic-virus": "mosaic-virus",
+        "whitefly": "whiteflies", "spider-mite": "spider-mites",
+        "nitrogen-deficiency": "nutrient-deficiency-nitrogen",
         "healthy": None,
     }
     for alias, key in aliases.items():
