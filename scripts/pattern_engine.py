@@ -140,7 +140,12 @@ def match_category(text: str, category: str, rules: dict | None = None,
         raise KeyError(f"unknown pattern category '{category}'; "
                        f"have: {', '.join(rules.get('categories', {}))}")
     matches: list[Match] = []
-    order = rules["categories"][category]["rules"]
+    order = list(rules["categories"][category]["rules"])
+    # Optional rule registry for one pattern shared across independently named
+    # categories (e.g. cyber secrets and finance scam). Store the rule once and
+    # list its target categories on the shared rule.
+    order.extend(rule for rule in rules.get("shared_rules", [])
+                 if category in rule.get("categories", []))
     for rule in order:
         m = _regex(rule).search(text or "")
         if not m:
