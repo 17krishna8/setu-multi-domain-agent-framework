@@ -122,9 +122,12 @@ def resolve_model(model: str | None = None) -> tuple[str, str, str, int]:
     return name, ("openai" if family.startswith("open") else "anthropic"), name, 4096
 
 
+# Refuse explicit requests to derive or compute values, not prose that merely
+# mentions EMI, rates, payments, or already-computed amounts. Keep explanatory
+# output available to finance.explain_emi and other normal chat workflows.
 _MATH_HINT = re.compile(
-    r"\b(calc(ulate)?|compute|how\s+much|what\s+is\s+\d|solve|\d+\s*[+\-*/^%]\s*\d+|"
-    r"emi|interest\s+rate\s+for|monthly\s+payment)\b", re.I)
+    r"\b(calculate|compute|solve|derive|work\s+out|how\s+much|what\s+is\s+\d)\b|"
+    r"\d+\s*[+\-*/^%]\s*\d+", re.I)
 
 
 def _looks_like_math(prompt: str) -> bool:
