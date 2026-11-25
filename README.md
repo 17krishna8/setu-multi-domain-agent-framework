@@ -221,14 +221,22 @@ image → agri-classify ── label + confidence (or "unidentified"; never inve
       → agri-localize ─── 13 Indian languages, product names and numbers preserved
 ```
 
-The classifier has an opt-in local MobileNetV2 adapter for 38 PlantVillage-style
-classes (`scripts/agri_model.py`). Install `requirements-agri-model.txt` and use
-`--pretrained` to load its pinned Apache-2.0 Hugging Face checkpoint. Model weights
-are not downloaded on normal imports or by the base installer. The training images
-are controlled-background PlantVillage data; farm-field performance and confidence
-calibration are not established by Setu. The 0.6 treatment gate still applies,
-and labels without locally validated guidance get no remedies. Translation remains
-callable-backed; without a translator it reports untranslated text honestly.
+Agri's optional local MobileNetV2 adapter classifies 38 PlantVillage-style
+disease classes (`scripts/agri_model.py`). Install `requirements-agri-model.txt`
+and use `--pretrained` to load its pinned Apache-2.0 Hugging Face checkpoint.
+The disease model is loaded only when requested; field performance and confidence
+calibration are not established by Setu, and the existing 0.6 treatment gate
+still applies.
+
+An independent opt-in **plant-content validation gate** uses the pinned
+Apache-2.0 Kindwise `router.tiny` model. Install `requirements-agri-image.txt`
+and pass `--validate-plant` to require that gate. Its weights are downloaded
+only when explicitly requested. It rejects invalid or non-plant images; it is
+not a disease diagnostic. Use both flags when an upload workflow must validate
+plant content and run the disease classifier. Without the validation flag,
+legacy code callers retain compatibility; untrusted upload workflows should
+require plant validation before classification or treatment. Translation
+remains callable-backed and reports untranslated text honestly when unavailable.
 
 Verified boundary: `0.599 → treatment_allowed: false`, `0.60 → true`. Two *distinct*
 refusal paths — low confidence (`uncertain`) and a confident label outside the

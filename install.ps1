@@ -48,7 +48,7 @@ $DomainScripts = @{
   webdev  = @('design_check.py','webdev_fix.py')
   admin   = @('admin_docs.py')
   finance = @('finance.py')
-  agri    = @('agri.py', 'agri_model.py')
+  agri    = @('agri.py', 'agri_image.py', 'agri_model.py')
   education = @('education.py')
 }
 $DomainRules = @{

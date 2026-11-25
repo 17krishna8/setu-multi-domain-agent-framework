@@ -63,3 +63,24 @@ def test_agri_classifier_callable_flows_through_crop_and_confidence_gates():
     assert incompatible["crop"] == "potato"
     assert agri.treat(incompatible)["status"] == "crop-mismatch"
     assert agri.treat(incompatible)["remedies"] == []
+
+
+def test_model_and_image_validator_are_combined_without_fallback(monkeypatch, capsys):
+    import agri
+    import agri_image
+
+    calls = []
+    monkeypatch.setattr(agri_image, "load_plant_validator",
+                        lambda: lambda _: {"plant_image": False, "reason": "not a plant"})
+    monkeypatch.setattr("agri_model.load_classifier",
+                        lambda: lambda *_: calls.append("classified") or
+                        {"label": "Early blight", "confidence": .99, "crop": "tomato"})
+
+    code = agri.main(["classify", "--image", "person.jpg", "--crop", "tomato",
+                      "--pretrained", "--validate-plant"])
+    result = __import__("json").loads(capsys.readouterr().out)
+
+    assert code == 2
+    assert result["status"] == "invalid-image"
+    assert result["treatment_allowed"] is False
+    assert calls == []
