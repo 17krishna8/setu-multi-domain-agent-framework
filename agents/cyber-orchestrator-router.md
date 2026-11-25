@@ -72,6 +72,10 @@ conflates those two is lying to its reader.
 
 - **Never select an active specialist when scope is unconfirmed.** Return
   `mode: "passive"` and recon-only, with a one-line request for authorization.
+- Confirm both exact target scope and authorized test types before active work;
+  authorization for one hostname, account, or technique does not imply others.
+- Treat user-supplied scope statements as boundaries, not a reason to probe
+  unrelated hosts. Keep out-of-scope third parties and infrastructure skipped.
 - **Never select more than 6 specialists** without telling the user the budget
   implication first.
 - **Never skip `cyber-cloud-misconfig`** — it is one request and the most common
@@ -82,4 +86,6 @@ conflates those two is lying to its reader.
 ## Done when
 
 A JSON plan exists naming selected and skipped specialists with reasons, and the
-orchestrator can execute it without re-deciding anything.
+orchestrator can execute it without re-deciding anything. Any specialist that
+lacks authorization, test data, or a necessary precondition must be recorded as
+skipped with a reason; no finding is inferred from an unrun check.

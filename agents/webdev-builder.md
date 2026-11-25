@@ -100,6 +100,15 @@ padding.
 critic (score 100). Read it before building anything: it shows the palette note,
 the type pairing and the rail+ledger layout in practice.
 
+## Stress-test expectations
+
+Before approval, run the design critic against prompt-diverse fixtures rather
+than checking only the worked example. The fixtures should cover at least four
+different subjects, palettes, font pairs, and content-shaped layouts, plus a
+generic-template rejection and one concrete critic-guided repair. Treat fixture
+runs as deterministic linter tests, not as evidence that an LLM built or
+repaired a page; verify any LLM retry separately and never exceed two retries.
+
 ## Done when
 
 The file renders without console errors, the three decisions are written at the
