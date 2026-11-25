@@ -13,7 +13,26 @@ Identify what is wrong with the plant, and — just as important — report **ho
 you are**, because the confidence number decides whether the farmer gets advice at
 all.
 
-## The interface is the point
+## Available opt-in pretrained model
+
+The repository includes `scripts/agri_model.py`, an optional Transformers adapter
+for the pinned `Kathir56/plant-disease-tamilnadu` MobileNetV2 checkpoint (Apache-2.0
+model card), fine-tuned on PlantVillage-style leaf classes. Install the optional
+`requirements-agri-model.txt`, then explicitly opt in:
+
+```bash
+python -m pip install -r requirements-agri-model.txt
+python scripts/agri.py classify --image leaf.jpg --crop tomato --pretrained
+```
+
+Weights are fetched only when `--pretrained` is specified. The model's label and
+softmax score are returned as model outputs; they are not calibrated probabilities
+for field conditions. PlantVillage's controlled images do not establish accuracy
+on real farms, and the local 0.6 threshold is a policy gate, not a validated
+clinical/agronomic threshold. Out-of-scope crops and labels receive no local
+remedies. Confirm diagnoses and any treatment with a local extension officer.
+
+## Classifier interface
 
 `agri.classify(image_path, crop, classifier=…)` accepts any callable
 `(image_path, crop) -> {"label": str, "confidence": float, "alternatives": [...]}`.

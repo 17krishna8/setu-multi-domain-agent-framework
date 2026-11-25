@@ -221,15 +221,21 @@ image → agri-classify ── label + confidence (or "unidentified"; never inve
       → agri-localize ─── 13 Indian languages, product names and numbers preserved
 ```
 
-Agri includes an opt-in **plant-content validation gate** backed by the pinned
+Agri's optional local MobileNetV2 adapter classifies 38 PlantVillage-style
+disease classes (`scripts/agri_model.py`). Install `requirements-agri-model.txt`
+and use `--pretrained` to load its pinned Apache-2.0 Hugging Face checkpoint.
+The disease model is loaded only when requested; field performance and confidence
+calibration are not established by Setu, and the existing 0.6 treatment gate
+still applies.
+
+An independent opt-in **plant-content validation gate** uses the pinned
 Apache-2.0 Kindwise `router.tiny` model. Install `requirements-agri-image.txt`
-and run `python scripts/agri.py classify --image leaf.jpg --crop tomato
---validate-plant`; model weights are fetched only when that explicit flag is
-used. The gate blocks classification when validation fails; it does not diagnose
-disease, and is a router rather than a calibrated field diagnostic. Disease
-classification remains a separate concern. Without the flag, legacy code callers
-retain compatibility; upload workflows that accept untrusted user files should
-explicitly require validation before classification or treatment. Translation
+and pass `--validate-plant` to require that gate. Its weights are downloaded
+only when explicitly requested. It rejects invalid or non-plant images; it is
+not a disease diagnostic. Use both flags when an upload workflow must validate
+plant content and run the disease classifier. Without the validation flag,
+legacy code callers retain compatibility; untrusted upload workflows should
+require plant validation before classification or treatment. Translation
 remains callable-backed and reports untranslated text honestly when unavailable.
 
 Verified boundary: `0.599 → treatment_allowed: false`, `0.60 → true`. Two *distinct*
@@ -426,6 +432,7 @@ setu/
 │   ├── finance.py                   # EMI (Decimal) · categorize · scam-check
 │   ├── education.py                 # deterministic study plan + spaced reviews
 │   ├── agri.py                      # classify · treat (0.6 gate) · localize
+│   ├── agri_model.py                # optional pinned MobileNetV2 PlantVillage adapter
 │   └── install_state.py             # owned-vs-shared ledger for exact uninstall
 ├── examples/webdev/grain-store.html # a page that passes the design critic (100)
 ├── tests/
