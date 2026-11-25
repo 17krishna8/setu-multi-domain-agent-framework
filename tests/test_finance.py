@@ -33,6 +33,16 @@ def test_emi_matches_closed_form():
         assert abs(float(got) - want) <= 1.0, f"{P}@{rate}%/{n}m: {got} vs {want}"
 
 
+def test_small_loans_keep_a_nonzero_payment_and_reconcile():
+    for principal, rate, months in [(100, 0, 300), (1, 0, 300), (1, 12, 300),
+                                    (10, 0, 3)]:
+        res = finance.emi(principal, rate, months, schedule=True)
+        assert Decimal(res["emi"]) > 0
+        assert Decimal(res["total_payment"]) >= Decimal(principal)
+        assert res["reconciled"] is True
+        assert Decimal(res["final_instalment"]) > 0
+
+
 def test_zero_rate_is_not_a_division_by_zero():
     res = finance.emi(120_000, 0, 12)
     assert res["emi"] == "10000"

@@ -318,9 +318,11 @@ def _kb_lookup(label: str, crop: str | None = None) -> str | None:
     norm = label.lower().replace("_", "-").replace(" ", "-")
     if norm in KNOWLEDGE_BASE:
         return norm
-    for key in KNOWLEDGE_BASE:
-        if key in norm or norm in key:
-            return key
+    # A partial label ("blight") can fit several entries. Picking the first one would
+    # issue one disease's treatment for an ambiguous label, so only a unique fit counts.
+    candidates = [key for key in KNOWLEDGE_BASE if key in norm or norm in key]
+    if len(candidates) == 1:
+        return candidates[0]
     aliases = {
         "alternaria": "early-blight", "phytophthora": "late-blight",
         "mildew": "powdery-mildew", "aphid": "aphids", "septoria": "leaf-spot",

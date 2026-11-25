@@ -426,7 +426,7 @@ def selftest() -> dict:
         import finance
         emi = finance.emi(500_000, 9.2, 60)["emi"]
         sched = finance.emi(500_000, 9.2, 60, schedule=True)
-        ok = emi == "10428" and sched["reconciled"] is True
+        ok = emi == "10427.78" and sched["reconciled"] is True
         return ok, f"emi={emi}, reconciled={sched['reconciled']}"
     check("finance: deterministic EMI + reconciled schedule", finance_math,
           needs="finance")

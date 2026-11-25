@@ -37,6 +37,19 @@ def test_threshold_boundary_is_inclusive_at_0_6():
     assert len(agri.treat(at)["remedies"]) > 0
 
 
+def test_ambiguous_blight_label_does_not_select_a_treatment():
+    res = agri.classify("x.jpg", "tomato", classifier=_classifier("blight", 0.95))
+    assert res["kb_key"] is None
+    assert res["treatment_allowed"] is False
+    assert agri.treat(res)["remedies"] == []
+
+
+def test_specific_late_blight_label_still_selects_guidance():
+    res = agri.classify("x.jpg", "tomato", classifier=_classifier("Tomato___Late_blight", 0.95))
+    assert res["kb_key"] == "late-blight"
+    assert agri.treat(res)["remedies"]
+
+
 def test_high_confidence_produces_ordered_remedies():
     res = agri.treat(agri.classify("x.jpg", "potato",
                                   classifier=_classifier("Late blight", 0.88)))

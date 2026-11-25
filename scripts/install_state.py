@@ -47,6 +47,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+BACKUP_SUFFIX = ".setu-bak"
 LEDGER = Path(os.environ.get("SETU_LEDGER", Path.home() / ".setu" / "install-ledger.json"))
 
 
@@ -152,9 +153,15 @@ def _uninstall_entries(entries: list[dict], dry_run: bool) -> int:
                 print("  " + _strip_managed_block(p, dry_run))
             else:
                 print(f"  shared file already gone: {p}")
+    restores: list[tuple[Path, Path]] = []
     for entry in entries:
         for f in entry.get("files", []):
             p = Path(f)
+            # A .setu-bak is the user's own file, moved aside on install. It is restored
+            # after the Setu copy is removed, never deleted.
+            if f.endswith(BACKUP_SUFFIX):
+                restores.append((p, Path(f[:-len(BACKUP_SUFFIX)])))
+                continue
             if p.exists() or p.is_symlink():
                 if dry_run:
                     print(f"would remove {p}")
@@ -169,6 +176,21 @@ def _uninstall_entries(entries: list[dict], dry_run: bool) -> int:
                 missing += 1
                 if dry_run:
                     print(f"already gone {p}")
+    for bak, original in restores:
+        if not bak.exists():
+            missing += 1
+            continue
+        if dry_run:
+            print(f"would restore {original} from {bak.name}")
+            continue
+        try:
+            os.replace(bak, original)
+        except OSError as e:
+            print(f"skip restore {original}: {e}", file=sys.stderr)
+            continue
+        print(f"restored {original}")
+        removed += 1
+    for entry in entries:
         # prune now-empty parent dirs, stopping at the recorded root
         if not dry_run:
             root = Path(entry["root"]).resolve() if entry.get("root") else None

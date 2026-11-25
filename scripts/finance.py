@@ -81,10 +81,15 @@ def emi(principal, annual_rate, months, *, schedule: bool = False,
     else:
         factor = (Decimal(1) + r) ** n
         raw_emi = P * r * factor / (factor - Decimal(1))
-    emi_val = _money(raw_emi, RUPEES)          # what a bank actually debits
+    emi_val = _money(raw_emi, PAISE)
+    # A sub-paisa EMI can round to zero, or fail to cover even rounded monthly
+    # interest. Use the smallest payment that makes principal progress; the final
+    # scheduled instalment still absorbs the exact remaining balance.
+    minimum_progress_payment = _money(P * r) + PAISE
+    emi_val = max(emi_val, minimum_progress_payment)
 
-    # The schedule is the single source of truth for totals. Rounding the EMI up
-    # to whole rupees means the loan closes a paisa or two before instalment n,
+    # The schedule is the single source of truth for totals. Rounding the EMI
+    # means the loan can close a paisa or two before instalment n,
     # so 60 x EMI is NOT what the borrower actually pays. Two different "total"
     # numbers in one result would look like a bug and undermine trust in the
     # whole calculation, so one number is truth and the other is labelled naive.
@@ -101,7 +106,7 @@ def emi(principal, annual_rate, months, *, schedule: bool = False,
                    "months": n, "currency": currency},
         "monthly_rate": float(r * 100),
         "emi_raw": str(raw_emi.quantize(PAISE)),
-        "emi": str(emi_val),
+        "emi": format(emi_val.normalize(), "f"),
         "total_payment": str(_money(total_payment)),
         "total_interest": str(_money(total_interest)),
         "interest_share_pct": round(float(total_interest / total_payment * 100), 2)
@@ -114,7 +119,7 @@ def emi(principal, annual_rate, months, *, schedule: bool = False,
                        "payment_if_fixed_instalment is the naive n x EMI figure.",
         "reconciled": summary["reconciled"],
         "formula": "EMI = P*r*(1+r)^n / ((1+r)^n - 1)   [r = annual/12/100]",
-        "rounding": "EMI rounded to the nearest rupee (half-to-even); schedule "
+        "rounding": "EMI rounded to the nearest paisa (half-to-even); schedule "
                     "reconciled so the closing balance is exactly zero",
     }
 
